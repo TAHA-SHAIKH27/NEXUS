@@ -1,12 +1,12 @@
 # NEXUS — Hackathon 2026 Implementation Plan
 
-- **Date/time (UTC):** 2026-10-24 20:45 UTC
+- **Date/time (UTC):** 2026-10-24 21:30 UTC
 - **Repository:** `C:\NEXUS-GitHub-Clean\project` — NEXUS (clean GitHub repo)
-- **Git Branch:** `feature/fpo-data-platform-v2`
-- **Status:** **Phase 1 Complete (Zetaris Direct API). Phase 2 Complete (Corrected 439K Realistic Records Generated, All Validations Pass).**
+- **Git Branch:** `feature/fpo-data-quality-repair`
+- **Status:** **Phase 1 Complete (Zetaris Direct API). Phase 2 Complete (526K Realistic Records, All Validations Pass, Warehouse Capacity Fixed).**
 - **Single plan file:** This is the only implementation-plan file for this work. Updated in place.
 
-**Last updated:** 2026-10-24 ~20:45 UTC — Phase 2 re-generation complete: Replaced unrealistic 574K synthetic records with 439K realistic, internally consistent FPO business records using corrected generator. All validations pass, Zetaris pipeline verified.
+**Last updated:** 2026-10-24 ~21:30 UTC — Phase 2 complete: Warehouse overcapacity eliminated. Replaced 574K unrealistic records with 526K realistic, internally consistent FPO records. All 18 validation checks pass. Zero warehouses over 100% capacity. Zetaris pipeline verified.
 
 ---
 
@@ -89,23 +89,24 @@ Build a realistic FPO operational database with 500,000+ synthetic records acros
 5. **SCN-E**: Hold vs immediate sale for potato storage
 
 ### 2.4 Full Dataset Generation — CORRECTED REGENERATION ✅ COMPLETE
-**Records Generated:** **439,314** realistic business records across all tables (replaced previous 574,604 unrealistic records)
+**Records Generated:** **526,397** realistic business records across all tables (replaced previous 574,604 unrealistic records)
 - fpos: 50, farmers: 16,000, farms: 22,000, crops: 31
-- harvest_batches: 85,000, warehouses: 550, inventory: 40,471
-- market_prices: 195,000, buyers: 2,200, sales_orders: 20,479
+- harvest_batches: 85,000, warehouses: 550, inventory: 123,626
+- market_prices: 195,000, buyers: 2,200, sales_orders: 24,407
 - transport_routes: 44,000, storage_costs: 13,500
-- **TOTAL: 439,314 records**
+- **TOTAL: 526,397 records**
 
 **Key Corrections Applied:**
 - Realistic harvest quantities based on farm area and crop yields (kg/hectare)
 - Proper inventory lifecycle: historical batches have minimal current stock, future harvests have zero physical inventory
-- Warehouse capacity respected (avg 95.8% utilization, 179 individual warehouses slightly over)
+- **Warehouse capacity fully respected: 0 warehouses over 100%, max 99.32%, avg 82.84% utilization**
 - No overselling: 0 batches with sales exceeding harvested quantity
 - Quality windows and spoilage risk calculated per crop perishability
 - Geographical accuracy: valid districts, states, coordinates for all entities
 - Crop-specific storage conditions and seasonality
 - Market prices with seasonal factors and realistic ranges
 - Demo scenarios linked to actual generated entities (all 5 scenarios have linked entities)
+- **Storage type / temperature control consistency: all 140 cold_storage warehouses have temperature_controlled=true**
 
 **Generation Details:**
 - Deterministic seed: 42
@@ -123,7 +124,7 @@ Build a realistic FPO operational database with 500,000+ synthetic records acros
 | Price ordering (min ≤ modal ≤ max) | ✅ 0 violations |
 | Positive capacities/distances | ✅ 0 violations |
 | Views return data | ✅ All 8 views + 1 matview populated |
-| Materialized view refresh | ✅ 155,124 rows after refresh |
+| Materialized view refresh | ✅ 155,033 rows after refresh |
 | Demo scenarios inserted | ✅ 5 scenarios |
 | Demo scenario entities linked | ✅ 12 entities across all 5 scenarios |
 | No future physical stock | ✅ 0 future batches with inventory |
@@ -132,6 +133,8 @@ Build a realistic FPO operational database with 500,000+ synthetic records acros
 | Geographical accuracy | ✅ 0 placeholder locations, 0 missing coords |
 | Financial calculation consistency | ✅ 0 violations (3 checks) |
 | Inventory lifecycle consistency | ✅ Historical/Today/Future correctly classified |
+| **Warehouse capacity compliance** | ✅ **0 overcapacity, max 99.32%, avg 82.84%** |
+| **Storage type / temp control consistency** | ✅ **All 140 cold_storage have temp_controlled=true** |
 
 ### 2.6 Read-Only Zetaris Role (`zetaris_ro`) ✅ CREATED
 ```sql
@@ -222,7 +225,9 @@ All queries return meaningful, realistic results.
 | Read-only Role | — | ✅ Created & verified | ✅ Verified working |
 | No Future Physical Stock | — | ❌ 142M kg | ✅ 0 kg |
 | No Overselling | — | ❌ 115M kg | ✅ 0 kg |
-| Warehouse Utilization | — | ❌ 2130% avg | ✅ 95.8% avg |
+| Warehouse Utilization | — | ❌ 2130% avg | ✅ **82.84% avg, max 99.32%** |
+| Warehouse Overcapacity | — | ❌ 179 warehouses | ✅ **0 warehouses** |
+| Storage Type Consistency | — | ❌ 98 cold_storage without temp_control | ✅ **0 violations** |
 
 ---
 
@@ -256,14 +261,13 @@ git push origin feature/fpo-data-platform
 
 ---
 
-## Known Issues / Limitations (Corrected)
+## Known Issues / Limitations (Fixed)
 
 1. **Inventory count below batch count** — ON CONFLICT DO NOTHING skips duplicates on (batch_id, warehouse_id) unique constraint. Acceptable; batches split across warehouses.
 2. **Materialized view requires manual refresh** — Automate via `pg_cron` or external scheduler.
-3. **Warehouse over-capacity** — 179 of 550 warehouses slightly exceed capacity (max ~105%). Acceptable for demo; reflects real-world pressure.
-4. **Sales orders lower than target** — 20,479 vs 88,000 target due to overselling prevention. Realistic: only 20% of inventory sold in period.
-5. **Zetaris data source registration requires UI** — No programmatic API for creating JDBC data sources in current Zetaris version.
-6. **Network connectivity** — Requires shared Docker network (`zetaris_default`) between Zetaris and FPO PostgreSQL.
+3. **Sales orders lower than target** — 24,407 vs 88,000 target due to overselling prevention and limited available inventory. Realistic: only ~15% of total harvest sold in period.
+4. **Zetaris data source registration requires UI** — No programmatic API for creating JDBC data sources in current Zetaris version.
+5. **Network connectivity** — Requires shared Docker network (`zetaris_default`) between Zetaris and FPO PostgreSQL.
 
 ---
 
@@ -311,24 +315,26 @@ python ../audit_baseline.py
 
 ---
 
-## Final Deliverables Checklist (Corrected Regeneration)
+## Final Deliverables Checklist (Warehouse Capacity Fixed)
 
 | Deliverable | Status |
 |---|---|
 | 12 table schema | ✅ Deployed |
 | Migration scripts (001-004) | ✅ Committed (004 adds planned status) |
 | Seed generator | ✅ Working |
-| **Corrected 500K record generator** | ✅ **439K realistic records generated** |
-| Data integrity tests | ✅ **All 18 checks passing** |
+| **Corrected 500K record generator** | ✅ **526K realistic records generated** |
+| Data integrity tests | ✅ **All 20 checks passing** |
 | Read-only role (`zetaris_ro`) | ✅ Created & verified |
 | Docker network + Zetaris connectivity | ✅ Configured |
 | Zetaris data source registration | ⚠️ Manual via UI (NEXUS_FPO) |
 | NEXUS E2E query flow | ✅ Verified via direct API (3 Zetaris queries pass) |
 | 5 demo scenarios embedded | ✅ Inserted + 12 entities linked |
-| Performance benchmarks | ✅ COPY loads in ~45s |
+| Performance benchmarks | ✅ COPY loads in ~50s |
 | Updated implementation plan | ✅ This file |
-| Git commits + push | ✅ Pushed to feature/fpo-data-platform-v2 |
+| Git commits + push | ✅ Pushed to feature/fpo-data-quality-repair |
 | Backup verified | ✅ `nexus_fpo_backup_20261024.dump` (36.5 MB) |
+| **Warehouse capacity compliance** | ✅ **0 overcapacity, max 99.32%, avg 82.84%** |
+| **Storage type consistency** | ✅ **All 140 cold_storage have temp_controlled=true** |
 
 ---
 
@@ -339,12 +345,13 @@ python ../audit_baseline.py
 | **Excessive stock (1.58B kg)** | Harvest quantities random 500-100,000 kg, not based on farm area/yields | `CROP_YIELDS` kg/hectare × farm area × utilization (0.3-1.0) |
 | **Future physical stock** | No status differentiation for future harvests | Added `planned` status, zero inventory for future batches |
 | **Overselling (115M kg)** | Sales orders queried inventory per-order without tracking remaining | Local `batch_available` dict tracks remaining per batch |
-| **Warehouse over-capacity (2130%)** | Small warehouse capacities (avg 185K kg) vs massive inventory | Increased capacities to 500K-5M kg range |
+| **Warehouse over-capacity (2130%)** | Random warehouse assignment ignored remaining capacity | **Capacity-aware allocation: track per-warehouse remaining space, allocate only to warehouses with available capacity** |
 | **Unrealistic yields** | No crop-specific yield modeling | 23 crops with researched Indian agriculture yields |
 | **Expired batches (55,786)** | Quality windows too short, no spoilage modeling | Perishability-based quality windows with realistic loss rates |
 | **Placeholder geography** | Buyers hardcoded "District"/"State" | Market-to-district-state mapping for all buyers |
 | **Demo scenarios unlinked** | No post-generation entity mapping | Queries link scenarios to actual qualifying generated entities |
 | **Inconsistent financials** | Not validated | Verified: transaction_value, transport_cost, price ordering all match |
+| **Storage type inconsistency** | cold_storage had temperature_controlled=false | Generator enforces cold_storage → temperature_controlled=true |
 
 ## Next Steps (Post-Hackathon)
 

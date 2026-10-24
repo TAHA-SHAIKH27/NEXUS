@@ -475,18 +475,22 @@ class CorrectedFPOGenerator:
             lat = round(self.rng.uniform(15.0, 22.0), 6)
             lon = round(self.rng.uniform(72.0, 81.0), 6)
             capacity = self.rng.choice(capacity_weights)
-            temp_controlled = self.rng.random() < 0.3
+            storage_type = self.rng.choice(storage_types)
+            # cold_storage must have temperature control; others can have it optionally
+            temp_controlled = (storage_type == "cold_storage") or (self.rng.random() < 0.2)
             
             rows.append([
                 wh_id, fpo["fpo_id"], f"{fpo['fpo_code']}-WH-{i+1:04d}",
                 fpo["district"], fpo["state"], lat, lon, capacity,
-                self.rng.choice(storage_types), temp_controlled, True
+                storage_type, temp_controlled, True
             ])
             warehouses.append({
                 "warehouse_id": wh_id, "fpo_id": fpo["fpo_id"], "capacity_kg": capacity,
-                "temp_controlled": temp_controlled, "district": fpo["district"], "state": fpo["state"]
+                "temp_controlled": temp_controlled, "district": fpo["district"], "state": fpo["state"],
+                "storage_type": storage_type
             })
-            self._register_entity('warehouse', wh_id, capacity=capacity, temp_controlled=temp_controlled, fpo_id=fpo["fpo_id"])
+            self._register_entity('warehouse', wh_id, capacity=capacity, temp_controlled=temp_controlled, 
+                                 storage_type=storage_type, fpo_id=fpo["fpo_id"])
         
         self._insert_batch("warehouses", [
             "warehouse_id", "fpo_id", "warehouse_name", "district", "state",
@@ -579,32 +583,18 @@ class CorrectedFPOGenerator:
             "discarded": [0, 0, 0, 0],
         }
         
+        # Track remaining capacity per warehouse
+        wh_capacity = {wh["warehouse_id"]: wh["capacity_kg"] for wh in warehouses}
+        wh_remaining = wh_capacity.copy()
+        
         rows = []
         generated = 0
-        batch_wh_map = {}
         
         for batch in batches:
             if batch["status"] in ("planned", "fully_sold", "discarded"):
                 continue
             
-            qty = batch["quantity"]
-            if qty > 50000:
-                num_wh = self.rng.randint(2, 3)
-            elif qty > 20000:
-                num_wh = self.rng.randint(1, 2)
-            else:
-                num_wh = 1
-            
-            whs = self.rng.sample(warehouses, min(num_wh, len(warehouses)))
-            batch_wh_map[batch["batch_id"]] = whs
-        
-        for batch in batches:
-            if batch["status"] in ("planned", "fully_sold", "discarded"):
-                continue
-            
-            whs = batch_wh_map.get(batch["batch_id"], [self.rng.choice(warehouses)])
-            remaining = batch["quantity"]
-            
+            # Calculate remaining quantity after sales and spoilage
             self._ensure_connection()
             self.cur.execute("""
                 SELECT COALESCE(SUM(quantity_kg), 0) FROM sales_orders 
@@ -620,15 +610,44 @@ class CorrectedFPOGenerator:
                 loss = remaining * monthly_loss * (days_since_harvest / 30)
                 remaining = max(0, remaining - loss)
             
-            for wh in batch_wh_map.get(batch["batch_id"], []):
-                if remaining <= 0:
+            if remaining <= 0:
+                continue
+            
+            # Find warehouses with available capacity, sorted by most remaining capacity
+            available_whs = [
+                wh for wh in warehouses 
+                if wh_remaining.get(wh["warehouse_id"], 0) > 100  # At least 100 kg space
+            ]
+            available_whs.sort(key=lambda w: wh_remaining.get(w["warehouse_id"], 0), reverse=True)
+            
+            if not available_whs:
+                # No warehouse has capacity - inventory cannot be stored
+                continue
+            
+            # Distribute remaining quantity across available warehouses
+            qty_to_allocate = remaining
+            for wh in available_whs:
+                if qty_to_allocate <= 0:
                     break
                 
-                inv_id = uuid.uuid4()
-                qty_avail = round(min(remaining, self.rng.uniform(100, remaining)), 2)
-                qty_reserved = round(self.rng.uniform(0, qty_avail * 0.4), 2)
-                remaining -= qty_avail
+                wh_remain = wh_remaining.get(wh["warehouse_id"], 0)
+                if wh_remain <= 100:
+                    continue
                 
+                # Allocate up to warehouse remaining capacity and remaining quantity
+                max_allocatable = min(qty_to_allocate, wh_remain)
+                if max_allocatable < 100:
+                    continue
+                
+                # Random allocation between 100 and max_allocatable
+                qty_avail = round(self.rng.uniform(100, max_allocatable), 2)
+                qty_reserved = round(self.rng.uniform(0, qty_avail * 0.4), 2)
+                
+                # Update remaining capacity
+                wh_remaining[wh["warehouse_id"]] -= qty_avail
+                qty_to_allocate -= qty_avail
+                
+                inv_id = uuid.uuid4()
                 weights = status_weights.get(batch["status"], [0.5, 0.2, 0.15, 0.15])
                 stock_status = self.rng.choices(stock_statuses, weights=weights)[0]
                 
@@ -643,6 +662,12 @@ class CorrectedFPOGenerator:
             "inventory_id", "batch_id", "warehouse_id", "quantity_available_kg",
             "quantity_reserved_kg", "last_updated", "stock_status"
         ], iter(rows), page_size=2000)
+        
+        # Report capacity utilization stats
+        total_cap = sum(wh_capacity.values())
+        total_used = sum(max(0, cap - wh_remaining.get(wid, 0)) for wid, cap in wh_capacity.items())
+        print(f"  Warehouse capacity: {total_cap:,.0f} kg, Used: {total_used:,.0f} kg, "
+              f"Utilization: {total_used/total_cap*100:.1f}%")
         
         return generated
     
