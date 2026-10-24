@@ -1,19 +1,21 @@
 """
 Zetaris AI Data Gateway connector — read-only SQL query execution.
 
-Uses the verified Zetaris UI Proxy REST API (gateway for the internal API):
-- POST /api/auth/login (username/password JSON -> returns idToken, refreshToken, orgId)
-- POST /api/proxy/query/sql/start (execute query with select, pageLimit)
-- GET /api/proxy/query/sql/page (fetch result pages)
-- DELETE /api/proxy/query/sql/close/{queryToken} (close query)
+Uses the verified Zetaris REST API (direct API, not UI proxy):
+- GET /api/v1.0/internal/auth/legacy-login (HTTP Basic auth -> returns idToken, refreshToken, orgId)
+- POST /api/v1.0/query/sql/start (execute query with select, pageLimit)
+- GET /api/v1.0/query/sql/page (fetch result pages)
+- DELETE /api/v1.0/query/sql/close/{queryToken} (close query)
 
 Authentication: HTTP Basic for login, then Bearer token + X-Org-ID + X-Request-ID headers.
 All queries are SELECT-only with enforced row limits (max 100).
-Base URL is the UI origin (default: http://localhost:3000).
+Base URL is the API origin (default: http://localhost:8888/api/v1.0).
+Login endpoint is on the internal auth port (default: http://localhost:8889).
 """
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 import uuid
@@ -78,7 +80,10 @@ def validate_select_only(sql: str) -> tuple[bool, str]:
 @dataclass
 class ZetarisConfig:
     """Zetaris connection configuration."""
-    base_url: str = "http://localhost:3000"  # UI origin, not the internal API port
+    # REST API base URL (for SQL queries) - e.g., http://localhost:8888/api/v1.0
+    rest_url: str = "http://localhost:8888/api/v1.0"
+    # Auth URL (for login) - e.g., http://localhost:8889
+    auth_url: str = "http://localhost:8889"
     org_id: str = ""  # Will be discovered from login response
     username: str = ""
     password: str = ""
@@ -88,8 +93,22 @@ class ZetarisConfig:
 
     @classmethod
     def from_config_dict(cls, config: Dict[str, Any]) -> "ZetarisConfig":
+        # Support both old and new config keys for backward compatibility
+        rest_url = config.get("zetaris_rest_url") or config.get("zetaris_base_url", "http://localhost:8888/api/v1.0")
+        auth_url = config.get("zetaris_auth_url", "http://localhost:8889")
+        # If only base_url was provided (old config), derive auth_url from it
+        if "zetaris_auth_url" not in config and "zetaris_base_url" in config:
+            # Old config used UI origin (port 3000), new API uses 8889
+            base = config["zetaris_base_url"]
+            if ":3000" in base:
+                auth_url = base.replace(":3000", ":8889")
+            elif ":8888" in base:
+                # Replace port but strip any path (auth is on root)
+                auth_url = base.replace(":8888", ":8889").split("/api/")[0]
+        
         return cls(
-            base_url=config.get("zetaris_base_url", "http://localhost:3000"),
+            rest_url=rest_url.rstrip("/"),
+            auth_url=auth_url.rstrip("/"),
             org_id=config.get("zetaris_org_id", ""),
             username=config.get("zetaris_username", ""),
             password=config.get("zetaris_password", ""),
@@ -102,8 +121,10 @@ class ZetarisConfig:
         """Check if minimal configuration is present."""
         if not (self.username and self.password):
             return False, "Both zetaris_username and zetaris_password are required for login"
-        if not self.base_url:
-            return False, "ZETARIS_BASE_URL (zetaris_base_url) is required (UI origin, e.g. http://localhost:3000)"
+        if not self.rest_url:
+            return False, "ZETARIS_REST_URL (zetaris_rest_url) is required (API origin, e.g. http://localhost:8888/api/v1.0)"
+        if not self.auth_url:
+            return False, "ZETARIS_AUTH_URL (zetaris_auth_url) is required (Auth origin, e.g. http://localhost:8889)"
         return True, ""
 
 
@@ -127,18 +148,22 @@ class ZetarisTimeoutError(ZetarisError):
 # --- Client ---
 
 class ZetarisClient:
-    """Read-only Zetaris UI Proxy REST API client."""
+    """Read-only Zetaris REST API client."""
 
-    LOGIN_PATH = "/api/auth/login"
-    START_QUERY_PATH = "/api/proxy/query/sql/start"
-    PAGE_QUERY_PATH = "/api/proxy/query/sql/page"
-    CLOSE_QUERY_PATH = "/api/proxy/query/sql/close/"
+    # API paths (relative to rest_url)
+    START_QUERY_PATH = "/query/sql/start"
+    PAGE_QUERY_PATH = "/query/sql/page"
+    CLOSE_QUERY_PATH = "/query/sql/close/"
+
+    # Auth path (relative to auth_url)
+    LOGIN_PATH = "/api/v1.0/internal/auth/legacy-login"
 
     def __init__(self, config: ZetarisConfig):
         self.config = config
         self._token: Optional[str] = None
         self._org_id: Optional[str] = config.org_id or None
-        self._base = config.base_url.rstrip("/")
+        self._rest_base = config.rest_url.rstrip("/")
+        self._auth_base = config.auth_url.rstrip("/")
 
     # --- Internal HTTP ---
 
@@ -148,10 +173,11 @@ class ZetarisClient:
         method: str = "GET",
         body: Optional[Dict[str, Any]] = None,
         headers: Optional[Dict[str, str]] = None,
-        use_login_auth: bool = False,
+        use_auth_base: bool = False,
     ) -> Any:
         """Make an HTTP request with timeout and error handling."""
-        url = f"{self._base}{path}"
+        base = self._auth_base if use_auth_base else self._rest_base
+        url = f"{base}{path}"
         req_headers = {
             "Accept": "application/json",
             "X-Request-ID": str(uuid.uuid4()),
@@ -159,9 +185,11 @@ class ZetarisClient:
         if headers:
             req_headers.update(headers)
 
-        if use_login_auth:
-            # Login uses JSON body with username/password, no auth header
-            req_headers["Content-Type"] = "application/json"
+        if use_auth_base:
+            # Login uses HTTP Basic Authentication
+            credentials = f"{self.config.username}:{self.config.password}"
+            encoded = base64.b64encode(credentials.encode("utf-8")).decode("ascii")
+            req_headers["Authorization"] = f"Basic {encoded}"
         elif self._token:
             req_headers["Authorization"] = f"Bearer {self._token}"
             req_headers["Content-Type"] = "application/json"
@@ -184,7 +212,7 @@ class ZetarisClient:
             raise ZetarisError(f"HTTP {e.code}: {detail}") from e
         except (URLError, TimeoutError, OSError) as e:
             reason = getattr(e, "reason", str(e))
-            raise ZetarisTimeoutError(f"Cannot reach {self._base}: {reason}") from e
+            raise ZetarisTimeoutError(f"Cannot reach {base}: {reason}") from e
 
     # --- Authentication ---
 
@@ -195,9 +223,9 @@ class ZetarisClient:
         if not (self.config.username and self.config.password):
             raise ZetarisAuthError("No username/password configured for login")
 
-        body = {"username": self.config.username, "password": self.config.password}
         try:
-            resp = self._request(self.LOGIN_PATH, method="POST", body=body, use_login_auth=True)
+            # Login uses HTTP Basic Auth via GET request
+            resp = self._request(self.LOGIN_PATH, method="GET", use_auth_base=True)
         except ZetarisAuthError:
             raise
         except ZetarisError as e:
@@ -292,6 +320,9 @@ class ZetarisClient:
             for row in records:
                 if isinstance(row, dict):
                     # Records are objects with column names as keys
+                    if not columns and row:
+                        # Infer columns from first row's keys
+                        columns = list(row.keys())
                     if columns:
                         all_rows.append([row.get(col) for col in columns])
                     else:
