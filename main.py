@@ -1674,6 +1674,15 @@ def process_command(req: CommandRequest):
     except Exception as exc:
         print(f"[zetaris] handler failed: {exc}")
 
+      # ── Agricultural FPO connector ──────────────────────────────────────────
+      try:
+          from backend.tools import fpo_analytics as _fpo
+          _fpo_result = _fpo.handle_fpo_agent_command(req.prompt)
+          if _fpo_result is not None:
+              return _fpo_result
+      except Exception as exc:
+          print(f"[fpo] handler failed: {exc}")
+
     # ── Deterministic identity memory (never LLM-dependent) ──────────────
     # "My name is Taha" / "I live in Pune" / "Pune only for weather" are
     # saved here on EVERY command — even offline or rate-limited — so the
@@ -2200,6 +2209,55 @@ def serve_work_file(path: str):
     }
     media_type = mime_map.get(ext, "application/octet-stream")
     return FileResponse(full_path, media_type=media_type)
+
+
+
+# ── Agricultural FPO Analytics Endpoints ──────────────────────────────
+@app.get("/api/fpo/stats")
+def api_fpo_stats(fpo_id: Optional[str] = None, crop_name: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_overview_stats(fpo_id=fpo_id, crop_name=crop_name)
+
+@app.get("/api/fpo/inventory")
+def api_fpo_inventory(page: int = 1, page_size: int = 25, 
+                      crop_name: Optional[str] = None, 
+                      district: Optional[str] = None,
+                      risk_level: Optional[str] = None,
+                      search: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_inventory_batches(page=page, page_size=page_size, 
+                                              crop_name=crop_name, district=district,
+                                              risk_level=risk_level, search=search)
+
+@app.get("/api/fpo/market-prices")
+def api_fpo_market_prices(crop_name: Optional[str] = None, market_name: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_market_intelligence(crop_name=crop_name, market_name=market_name)
+
+@app.get("/api/fpo/logistics")
+def api_fpo_logistics():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_logistics_intelligence()
+
+@app.get("/api/fpo/risks")
+def api_fpo_risks(risk_level: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_risk_centre(risk_level=risk_level)
+
+@app.get("/api/fpo/decisions")
+def api_fpo_decisions():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_decisions_scenarios()
+
+@app.get("/api/fpo/datasources")
+def api_fpo_datasources():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_datasources_status()
+
+@app.get("/api/fpo/filters")
+def api_fpo_filters():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_filter_options()
 
 
 if __name__ == "__main__":
