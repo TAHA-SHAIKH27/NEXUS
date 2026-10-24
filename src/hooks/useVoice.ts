@@ -1,5 +1,5 @@
 // useVoice.ts
-// Standard browser Web Speech API voice pipeline hook for JARVIS.
+// Standard browser Web Speech API voice pipeline hook for NEXUS.
 // Coordinates SpeechRecognition, speechSynthesis, and Web Audio API mic-level visualization.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
@@ -7,6 +7,7 @@ import { pickBrowserVoice } from '../langDetect';
 
 declare global {
   interface Window {
+    nexusAudioLevel?: number;
     jarvisAudioLevel?: number;
   }
 }
@@ -51,12 +52,12 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const awaitingFinalPttRef = useRef(false);
   const executeCommandRef = useRef<((text: string) => void) | null>(null);
 
-  // ---------- Barge-in refs (interrupt JARVIS mid-reply by voice) ----------
-  // Recognition now STAYS ALIVE during TTS. Results arriving while JARVIS
+  // ---------- Barge-in refs (interrupt NEXUS mid-reply by voice) ----------
+  // Recognition now STAYS ALIVE during TTS. Results arriving while NEXUS
   // speaks are ignored unless they carry a barge-in cue — this is what lets
-  // the user cut in with "Jarvis, …" / "stop" / "wait" instead of waiting.
+  // the user cut in with "Nexus, …" / "stop" / "wait" instead of waiting.
   const ttsPlayingRef = useRef(false);
-  // Rolling window of what JARVIS recently said (lowercase) for echo guard.
+  // Rolling window of what NEXUS recently said (lowercase) for echo guard.
   // 2000 chars covers long replies — the old 400-char window let the tail of
   // a long answer slip past the guard, so Chrome hearing our own voice would
   // re-execute the same command ~30s later (duplicate bubble + duplicate TTS).
@@ -66,15 +67,15 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   const listenStateRef = useRef<'WAKE' | 'COMMAND'>('WAKE');
   const bargeRevertTimerRef = useRef<any>(null);
 
-  // Words that cut through JARVIS speech. Ordered longest-first for stripping.
-  const BARGE_CUES = ['hey jarvis', 'hold on', 'jarvis', 'जार्विस', 'listen', 'stop', 'wait', 'quiet', 'shush', 'hey'];
+  // Words that cut through NEXUS speech. Ordered longest-first for stripping.
+  const BARGE_CUES = ['hey nexus', 'hold on', 'nexus', 'नेक्सस', 'नेक्सास', 'listen', 'stop', 'wait', 'quiet', 'shush', 'hey'];
   // Wake-word forms: Latin, Devanagari (Chrome often returns Hindi in native
-  // script), plus common mishearings of "Jarvis".
-  const WAKE_WORDS = ['jarvis', 'जार्विस', 'javis', 'jarwis'];
+  // script), plus common mishearings of "Nexus".
+  const WAKE_WORDS = ['nexus', 'नेक्सस', 'नेक्सास', 'nexis', 'nexas', 'neksus', 'neckus'];
   const bargedAtRef = useRef(0);
 
   // Word matching that also works for non-Latin scripts (JS \b is ASCII-only,
-  // so "they" must not trip "hey", and जार्विस must match mid-sentence).
+  // so "they" must not trip "hey", and नेक्सस must match mid-sentence).
   const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const BOUND = '[\\s,.!?;:\'\"()\\[\\]-]';
   const hasWord = (text: string, word: string): boolean =>
@@ -101,7 +102,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
   // keep them off unless debugging voice.
   const VERBOSE_VOICE_LOG = false;
 
-  // Mute flag from the host app (single "mute JARVIS" control). Read via ref
+  // Mute flag from the host app (single "mute NEXUS" control). Read via ref
   // at speak time so callbacks never go stale.
   const mutedRef = useRef(false);
   useEffect(() => {
@@ -169,7 +170,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
       const getMicLevel = () => {
         if (!analyserRef.current || !streamRef.current) {
-          window.jarvisAudioLevel = 0;
+          window.nexusAudioLevel = 0;
           return;
         }
 
@@ -181,8 +182,8 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         }
         const rms = Math.sqrt(sum / bufferLength);
 
-        // Map RMS to jarvisAudioLevel (0.0 - 1.0)
-        window.jarvisAudioLevel = Math.min(1.0, Math.max(0, (rms - 0.004) * 24.0)); // Amplified for pulsing visual feedback
+        // Map RMS to nexusAudioLevel (0.0 - 1.0)
+        window.nexusAudioLevel = Math.min(1.0, Math.max(0, (rms - 0.004) * 24.0)); try { window.jarvisAudioLevel = window.nexusAudioLevel; } catch {} // Amplified for pulsing visual feedback
 
         animationFrameRef.current = window.setTimeout(() => requestAnimationFrame(getMicLevel), 33) as unknown as number;
       };
@@ -211,7 +212,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
     }
 
     analyserRef.current = null;
-    window.jarvisAudioLevel = 0;
+    window.nexusAudioLevel = 0;
     console.log('[Voice] Web Audio API visualizer stopped.');
   }, []);
 
@@ -259,7 +260,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       const originalOnEnd = utterance.onend;
       const originalOnError = utterance.onerror;
 
-      // Remember what JARVIS is saying so the barge-in echo guard can
+      // Remember what NEXUS is saying so the barge-in echo guard can
       // tell our own voice apart from the user's.
       try {
         const said = (utterance.text || '').toLowerCase();
@@ -311,13 +312,13 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
     // listenState lives in listenStateRef (declared above) so barge-in can drive it.
 
-    // Barge-in: user cuts in while JARVIS speaks. Returns true when the
+    // Barge-in: user cuts in while NEXUS speaks. Returns true when the
     // result was consumed (echo ignored or cue handled).
     const tryBargeIn = (segment: string, isFinal: boolean): boolean => {
       const lower = segment.trim().toLowerCase();
       if (!lower) return false;
 
-      // Echo guard: if most of these words are ones JARVIS just said,
+      // Echo guard: if most of these words are ones NEXUS just said,
       // this is our own voice coming back through the mic — ignore it.
       const words = lower.split(/\s+/).filter(w => w.length > 2);
       if (words.length > 0) {
@@ -330,7 +331,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       const cue = cueIn(lower);
       if (!cue) return false;
       // Interim results only count when the user leads with the cue
-      // ("Jarvis, …", "stop") — keeps latency low without false trips.
+      // ("Nexus, …", "stop") — keeps latency low without false trips.
       if (!isFinal && !cueLeads(lower)) return false;
       // One barge per moment: follow-up interim/final fragments of the same
       // utterance must not re-cancel and re-beep.
@@ -343,7 +344,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       playBeep(650);
       setPartialTranscript('❚❚ Interrupted — listening…');
 
-      // Strip a leading cue: "jarvis open notepad" runs at once, a lone
+      // Strip a leading cue: "nexus open notepad" runs at once, a lone
       // "stop" just opens a short window for the real command.
       const rest = stripLeadingCue(lower);
       const restHasCommand = rest.length > 2 && !cueIn(rest);
@@ -383,7 +384,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
 
       const lastIsFinal = event.results[event.results.length - 1].isFinal || !interimText;
 
-      // While JARVIS speaks, only barge-in cues get through.
+      // While NEXUS speaks, only barge-in cues get through.
       if (ttsPlayingRef.current) {
         tryBargeIn(finalText || interimText, lastIsFinal);
         return;
@@ -431,7 +432,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
       if (listenStateRef.current === 'WAKE') {
         const wakeHit = WAKE_WORDS.find(w => hasWord(fullText, w));
         if (wakeHit) {
-          // Check for "Jarvis, do X" (one sentence trigger)
+          // Check for "Nexus, do X" (one sentence trigger)
           const parts = fullText.split(wakeHit);
           const commandText = parts[1] ? parts[1].replace(/^[,\s]+|[,\s]+$/g, '').trim() : '';
 
@@ -453,7 +454,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
               executeCommand(commandText);
             }
           } else {
-            // "Jarvis" -> "Yes?" -> command flow
+            // "Nexus" -> "Yes?" -> command flow
             if (event.results[event.results.length - 1].isFinal || !interimText) {
               if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
 
@@ -464,14 +465,14 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
               
               listenStateRef.current = 'COMMAND';
 
-              // Play beep and output "Yes?" (silent when JARVIS is muted) (silent when JARVIS is muted)
+              // Play beep and output "Yes?" (silent when NEXUS is muted) (silent when NEXUS is muted)
               playBeep(850);
               if (!mutedRef.current && window.speechSynthesis) {
                 const utter = new SpeechSynthesisUtterance('Yes?');
                 utter.rate = 0.88;
                 utter.pitch = 0.85;
                 try {
-                  // JARVIS is male — use the male English voice, never the default.
+                  // NEXUS is male — use the male English voice, never the default.
                   const maleVoice = pickBrowserVoice('en');
                   if (maleVoice) utter.voice = maleVoice;
                 } catch {}
@@ -754,7 +755,7 @@ export function useVoice(options: UseVoiceOptions = {}): UseVoiceReturn {
         audioContextRef.current.close().catch(() => {});
       }
 
-      window.jarvisAudioLevel = 0;
+      window.nexusAudioLevel = 0;
     };
   }, []);
 

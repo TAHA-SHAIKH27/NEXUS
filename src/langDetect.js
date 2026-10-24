@@ -1,6 +1,6 @@
 // langDetect.js — frontend mirror of backend/agent/lang_detect.py (same rules).
 // Detects hi/mr/ur/en/fr/es for a reply and picks a matching browser voice
-// so JARVIS speaks Hindi, Urdu, Marathi, French, Spanish — not just English.
+// so NEXUS speaks Hindi, Urdu, Marathi, French, Spanish — not just English.
 
 const MR_MARKERS = ['आहे', 'नाही', 'नको', 'मला', 'तुला', 'तुम्ही', 'आम्ही',
   'कसे', 'कशी', 'कुठे', 'माझा', 'माझं', 'माझी', 'होय', 'पाहिजे', 'करतो', 'करते'];
@@ -85,13 +85,13 @@ function isCJKVoice(v) {
 }
 
 // Native English male voices, best first. Checked by name before any
-// locale matching so JARVIS always sounds like a native speaker.
+// locale matching so NEXUS always sounds like a native speaker.
 const PREFERRED_NATIVE_EN = [
   'microsoft david', 'google uk english male', 'microsoft mark',
   'microsoft george', 'microsoft daniel', 'google us english', 'daniel',
 ];
 
-// JARVIS is male, so within any language tier a male voice always wins.
+// NEXUS is male, so within any language tier a male voice always wins.
 // Browser voices rarely expose gender directly — detect it from the voice
 // name (e.g. "Microsoft David" male vs "Microsoft Zira" female, "Google UK
 // English Male"). Tokens are matched whole-word so "man" never matches
@@ -120,7 +120,7 @@ export function voiceGender(name) {
 }
 
 // Male voices first, then gender-unknown (e.g. "Google US English"), with
-// female voices strictly last — JARVIS must never sound female when a male
+// female voices strictly last — NEXUS must never sound female when a male
 // (or neutral) alternative exists in the same language.
 function preferMaleFirst(voices) {
   const rank = (v) => {
@@ -135,7 +135,7 @@ export function pickBrowserVoice(lang) {
   // speak with the browser default (often a non-native voice) just
   // because the cache was still empty.
   if (!cachedVoices.length) refreshVoices();
-  // CJK voices are never eligible for any language JARVIS speaks.
+  // CJK voices are never eligible for any language NEXUS speaks.
   const pool = cachedVoices.filter((v) => !isCJKVoice(v));
   if (!pool.length) return null;
   if (lang === 'en' || !lang) {

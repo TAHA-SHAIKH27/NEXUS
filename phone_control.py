@@ -1,11 +1,11 @@
 """
 phone_control.py
 -----------------
-J.A.R.V.I.S. "Phone Control" skill — talks to a connected Android device over
+N.E.X.U.S. "Phone Control" skill — talks to a connected Android device over
 ADB (Android Debug Bridge), and can launch scrcpy to mirror/interact with the
 phone in a live window.
 
-SETUP (one-time, done by the user - not by Jarvis):
+SETUP (one-time, done by the user - not by Nexus):
 1. You need the `adb` executable (comes in Android "platform-tools") and,
    optionally, `scrcpy` (only required for the live mirror window — every
    other phone feature works with adb alone).
@@ -16,10 +16,10 @@ SETUP (one-time, done by the user - not by Jarvis):
    PATH, OR (easier, no PATH editing) create a file named `.env` next to
    main.py in the backend folder with the full path(s), e.g. on Windows:
 
-       JARVIS_ADB_PATH=C:\\Tools\\platform-tools\\adb.exe
-       JARVIS_SCRCPY_PATH=C:\\Tools\\scrcpy\\scrcpy.exe
+       NEXUS_ADB_PATH=C:\\Tools\\platform-tools\\adb.exe
+       NEXUS_SCRCPY_PATH=C:\\Tools\\scrcpy\\scrcpy.exe
 
-   If JARVIS_ADB_PATH / JARVIS_SCRCPY_PATH aren't set, Jarvis falls back to
+   If NEXUS_ADB_PATH / NEXUS_SCRCPY_PATH aren't set, Nexus falls back to
    plain `adb` / `scrcpy` and expects them on PATH.
 
 3. On the phone: Settings -> About phone -> tap "Build number" 7 times to
@@ -45,25 +45,25 @@ from datetime import datetime
 from dotenv import load_dotenv
 from system_ops import WORK_DIR
 
-# Load JARVIS_ADB_PATH / JARVIS_SCRCPY_PATH from a .env file next to main.py,
+# Load NEXUS_ADB_PATH / NEXUS_SCRCPY_PATH from a .env file next to main.py,
 # if present, so the user doesn't have to touch their system PATH at all.
 load_dotenv()
 
-ADB_BIN = os.environ.get("JARVIS_ADB_PATH", "adb").strip('"')
-SCRCPY_BIN = os.environ.get("JARVIS_SCRCPY_PATH", "scrcpy").strip('"')
+ADB_BIN = (os.environ.get("NEXUS_ADB_PATH", "") or os.environ.get("JARVIS_ADB_PATH", "") or "adb").strip('"')
+SCRCPY_BIN = (os.environ.get("NEXUS_SCRCPY_PATH", "") or os.environ.get("JARVIS_SCRCPY_PATH", "") or "scrcpy").strip('"')
 
 # Optional: a default unlock PIN, read from .env, used only if the user
 # doesn't supply one directly in the command. SECURITY NOTE: this sits in
 # plaintext in your local .env file — fine for a personal machine, but
 # never commit .env to source control, and skip this entirely if your
 # lock screen is swipe-only (no PIN/pattern needed).
-DEFAULT_PHONE_PIN = os.environ.get("JARVIS_PHONE_PIN", "").strip()
+DEFAULT_PHONE_PIN = (os.environ.get("NEXUS_PHONE_PIN", "") or os.environ.get("JARVIS_PHONE_PIN", "")).strip()
 
 PHONE_DIR = os.path.join(WORK_DIR, "phone")
 if not os.path.exists(PHONE_DIR):
     os.makedirs(PHONE_DIR)
 
-# Common Android keyevent names Jarvis can send with phone_key
+# Common Android keyevent names Nexus can send with phone_key
 KEYEVENT_MAP = {
     "home": "KEYCODE_HOME",
     "back": "KEYCODE_BACK",
@@ -328,10 +328,10 @@ def _is_locked(device_id: str = None):
 #
 # Fine-tune without touching code: set these in your .env file if taps are
 # landing slightly off (each is a fraction between 0 and 1):
-#   JARVIS_PIN_Y_OFFSET=0.02   (positive = shift every row down, negative = up)
-#   JARVIS_PIN_X_OFFSET=0.0    (positive = shift every column right)
-_PIN_Y_OFFSET = float(os.environ.get("JARVIS_PIN_Y_OFFSET", "0") or 0)
-_PIN_X_OFFSET = float(os.environ.get("JARVIS_PIN_X_OFFSET", "0") or 0)
+#   NEXUS_PIN_Y_OFFSET=0.02   (positive = shift every row down, negative = up)
+#   NEXUS_PIN_X_OFFSET=0.0    (positive = shift every column right)
+_PIN_Y_OFFSET = float(os.environ.get("NEXUS_PIN_Y_OFFSET", "0") or 0)
+_PIN_X_OFFSET = float(os.environ.get("NEXUS_PIN_X_OFFSET", "0") or 0)
 
 # Which method to use for entering the PIN: "tap" (calibrated taps on the
 # on-screen keypad — works even on hardened keyguards like Samsung/MIUI
@@ -340,8 +340,8 @@ _PIN_X_OFFSET = float(os.environ.get("JARVIS_PIN_X_OFFSET", "0") or 0)
 # fall back to tap only if still locked). Default is "tap" since that's the
 # method proven to actually work across the widest range of devices.
 # Override in .env if your device supports keyevent-based entry:
-#   JARVIS_PIN_METHOD=keyevent   or   JARVIS_PIN_METHOD=auto
-_PIN_METHOD = os.environ.get("JARVIS_PIN_METHOD", "tap").strip().lower()
+#   NEXUS_PIN_METHOD=keyevent   or   NEXUS_PIN_METHOD=auto
+_PIN_METHOD = os.environ.get("NEXUS_PIN_METHOD", "tap").strip().lower()
 
 # Whether to swipe up before entering the PIN, to reveal the keyguard's PIN
 # pad from a fully-locked/off screen. Most phones need this. Default is ON.
@@ -351,13 +351,13 @@ _PIN_METHOD = os.environ.get("JARVIS_PIN_METHOD", "tap").strip().lower()
 # mid-swipe risks registering a stray touch on whichever digit the path
 # passes over, corrupting the PIN before real entry even starts). Tune via
 # .env if your device's keypad sits higher/lower on screen:
-#   JARVIS_UNLOCK_SWIPE=false       (disable the swipe entirely)
-#   JARVIS_SWIPE_Y_START=0.97       (fraction of height — swipe start point)
-#   JARVIS_SWIPE_Y_END=0.15         (fraction of height — swipe end point,
+#   NEXUS_UNLOCK_SWIPE=false       (disable the swipe entirely)
+#   NEXUS_SWIPE_Y_START=0.97       (fraction of height — swipe start point)
+#   NEXUS_SWIPE_Y_END=0.15         (fraction of height — swipe end point,
 #                                     should be above _PIN_ROW_Y["123"] below)
-_DO_UNLOCK_SWIPE = os.environ.get("JARVIS_UNLOCK_SWIPE", "true").strip().lower() not in ("false", "0", "no")
-_SWIPE_Y_START = float(os.environ.get("JARVIS_SWIPE_Y_START", "0.97") or 0.97)
-_SWIPE_Y_END = float(os.environ.get("JARVIS_SWIPE_Y_END", "0.15") or 0.15)
+_DO_UNLOCK_SWIPE = os.environ.get("NEXUS_UNLOCK_SWIPE", "true").strip().lower() not in ("false", "0", "no")
+_SWIPE_Y_START = float(os.environ.get("NEXUS_SWIPE_Y_START", "0.97") or 0.97)
+_SWIPE_Y_END = float(os.environ.get("NEXUS_SWIPE_Y_END", "0.15") or 0.15)
 
 _PIN_ROW_Y = {  # fraction of screen height for each keypad row
     "123": 0.647,
@@ -422,7 +422,7 @@ def test_pin_digit_tap(digit: str, device_id: str = None) -> dict:
 
 
 def unlock_phone(pin: str = None, device_id: str = None) -> dict:
-    """Wake the phone and, if a PIN is supplied (or a JARVIS_PHONE_PIN
+    """Wake the phone and, if a PIN is supplied (or a NEXUS_PHONE_PIN
     default is set in .env), enter it. The swipe-up step is OFF by default
     (see _DO_UNLOCK_SWIPE) since on many devices the PIN pad appears
     immediately on wake, and swiping anyway risks a stray touch on the
@@ -501,12 +501,12 @@ def unlock_phone(pin: str = None, device_id: str = None) -> dict:
                         "message": (f"I tried {method_desc} PIN entry but the phone still appears "
                                     "locked, sir — either the PIN is wrong, or the tap coordinates need "
                                     "adjusting. Try \"test tap 5 on phone\" to check alignment, and set "
-                                    "JARVIS_PIN_Y_OFFSET / JARVIS_PIN_X_OFFSET in .env if it's off.")}
+                                    "NEXUS_PIN_Y_OFFSET / NEXUS_PIN_X_OFFSET in .env if it's off.")}
             woke_desc = "woke the screen and swiped" if _DO_UNLOCK_SWIPE else "woke the screen"
             return {"status": "success",
                     "message": (f"I {woke_desc}, sir, but your lock screen needs a PIN or pattern to fully "
                                 "unlock. Tell me the PIN (e.g. \"unlock my phone with pin 1234\"), or set "
-                                "JARVIS_PHONE_PIN in .env so I remember it. (Pattern-only lock screens "
+                                "NEXUS_PHONE_PIN in .env so I remember it. (Pattern-only lock screens "
                                 "aren't supported — switch to a PIN if you want hands-free unlock.)")}
 
         if still_locked is False:
@@ -520,7 +520,7 @@ def unlock_phone(pin: str = None, device_id: str = None) -> dict:
         return {"status": "success",
                 "message": (f"{seq_desc} sequence completed, sir — I couldn't confirm the lock state on this "
                              "device model. If it's still locked, it likely needs a PIN: tell me the PIN or "
-                             "set JARVIS_PHONE_PIN in .env.")}
+                             "set NEXUS_PHONE_PIN in .env.")}
     except Exception as e:
         return {"status": "error", "message": f"Failed to unlock phone: {str(e)}"}
 

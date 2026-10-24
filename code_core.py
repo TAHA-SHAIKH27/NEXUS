@@ -1,5 +1,5 @@
 """
-code_core.py — Autonomous Code Intelligence & Developer Engine for J.A.R.V.I.S.
+code_core.py — Code Intelligence & Developer Engine for N.E.X.U.S.
 ==============================================================================
 Capabilities:
 - Self-Code Audit (Read-only inspection, zero mutations by default).
@@ -12,7 +12,7 @@ ARCHITECTURE NOTE:
 - Nemotron (NVIDIA NIM) is the dedicated engine for code analysis/fixing.
 - NO GEMINI FALLBACK for code fixing operations.
 - If Nemotron unavailable, operations return clear error requiring Nemotron config.
-- Gemini remains the engine for NORMAL JARVIS conversation/tasks.
+- Gemini remains the engine for NORMAL NEXUS conversation/tasks.
 """
 
 import os
@@ -146,7 +146,7 @@ class NemotronUnavailableError(RuntimeError):
     """Raised when Nemotron (NVIDIA NIM) cannot be reached or never completes.
 
     Subclasses RuntimeError so existing `except Exception`/`except RuntimeError`
-    handlers in J.A.R.V.I.S. keep working. Raise type signals that Nemotron —
+    handlers in N.E.X.U.S. keep working. Raise type signals that Nemotron —
     not the calling code — is the reason the operation failed.
     """
 
@@ -308,8 +308,8 @@ def call_nemotron(prompt: str, system_prompt: str = "", model: str = None) -> st
     raise NemotronUnavailableError(error_msg)
 
 
-# REMOVED: call_gemini_fallback() - Code intelligence must use Nemotron only.
-# Gemini is for NORMAL JARVIS OPERATIONS (conversation, planning, etc.) ONLY.
+# Design note: code intelligence uses Nemotron only.
+# Gemini is for NORMAL NEXUS OPERATIONS (conversation, planning, etc.) ONLY.
 
 
 def create_backup(filepath: str, tag: str = "codecore") -> str:
@@ -416,7 +416,7 @@ def _discover_audit_files() -> tuple[list, list]:
     if not py_files and not js_files:
         py_files = [
             "main.py", "agent.py", "system_ops.py", "code_core.py",
-            "recovery_engine.py", "jarvis_watchdog.py", "phone_control.py",
+            "recovery_engine.py", "nexus_watchdog.py", "phone_control.py",
         ]
         js_files = [
             os.path.join("src", "App.jsx"),
@@ -430,7 +430,7 @@ def _discover_audit_files() -> tuple[list, list]:
 
 def audit_codebase() -> dict:
     """
-    Perform a complete read-only self-audit of JARVIS's source code.
+    Perform a complete read-only self-audit of NEXUS's source code.
     Discovers every workspace .py / .jsx / .js / .mjs / .cjs file (skipping
     dependencies, build output and runtime data dirs) and checks Python
     syntax via AST + py_compile and JS modules for duplicate exports.
@@ -605,7 +605,7 @@ def preview_file_fix(filepath: str, issue_description: str = "", line: int = 0) 
         window_snippet = "".join(lines[start_idx:end_idx])
 
         sys_prompt = (
-            "You are an expert code repair engine for J.A.R.V.I.S.\n"
+            "You are an expert code repair engine for N.E.X.U.S.\n"
             "Your task: Fix the specific bug/syntax error inside the provided code snippet.\n"
             "CRITICAL RULES:\n"
             f"1. Output ONLY the replacement code for lines {start_idx + 1} to {end_idx}.\n"
@@ -643,7 +643,7 @@ def preview_file_fix(filepath: str, issue_description: str = "", line: int = 0) 
             log_codecore_event("SURGICAL_PREVIEW_FALLBACK", f"Surgical preview failed for {filepath}: {e}")
 
     system_prompt = (
-        "You are an expert software developer and code auditor for J.A.R.V.I.S.\n"
+        "You are an expert software developer and code auditor for N.E.X.U.S.\n"
         "Your task: Inspect the provided file and generate a minimal, surgically precise fix for the described issue.\n"
         "RULES:\n"
         "1. Fix the bug cleanly with minimal changes.\n"
@@ -1011,7 +1011,7 @@ def _repair_large_file_segments(filename: str, file_content: str, user_instructi
     unresolved: list = []
 
     sys_prompt = (
-        "You are an expert code repair engine for J.A.R.V.I.S.\n"
+        "You are an expert code repair engine for N.E.X.U.S.\n"
         "You receive ONE segment (lines of a larger file) inside code fences.\n"
         "Find and fix the real errors, syntax bugs and the user's stated objective in THAT segment.\n"
         "CAREFULLY scan EVERY line for: undefined or misspelled variables, misspelled attribute/method "
@@ -1141,7 +1141,7 @@ def process_uploaded_code_file(filename: str, file_content: str, user_instructio
     Inspect an uploaded user code file for bugs, refactor/fix it, and save in downloads/ for retrieval.
     """
     system_prompt = (
-        "You are an expert code refactoring and bug fixing engine for J.A.R.V.I.S.\n"
+        "You are an expert code refactoring and bug fixing engine for N.E.X.U.S.\n"
         "Your task: Inspect the uploaded user code file, identify bugs, syntax errors, and edge cases, "
         "and refactor it according to user instructions.\n"
         "OUTPUT FORMAT REQUIREMENTS:\n"

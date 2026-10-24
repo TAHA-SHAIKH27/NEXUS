@@ -166,7 +166,7 @@ class Office:
         title_p.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
         # Subtitle / Metadata
-        subtitle_text = report.get("subtitle") or "Synthesized Intelligence Report | J.A.R.V.I.S. Research Division"
+        subtitle_text = report.get("subtitle") or "Synthesized Intelligence Report | N.E.X.U.S. Research Division"
         sub_p = doc.add_paragraph()
         sub_run = sub_p.add_run(subtitle_text)
         sub_run.italic = True
@@ -449,7 +449,7 @@ class Office:
             p2.space_after = Pt(28)
 
             p3 = tf.add_paragraph()
-            p3.text = f"Prepared by J.A.R.V.I.S. Agentic Intelligence System  ·  {datetime.now().strftime('%B %Y')}"
+            p3.text = f"Prepared by N.E.X.U.S.  ·  {datetime.now().strftime('%B %Y')}"
             p3.font.size = Pt(12)
             p3.font.color.rgb = PptRGBColor(0x94, 0xA3, 0xB8)  # Slate 400
 

@@ -1,5 +1,5 @@
 /**
- * AudioManager.js — Centralized Procedural Audio Synthesis Engine for J.A.R.V.I.S.
+ * AudioManager.js — Centralized Procedural Audio Synthesis Engine for N.E.X.U.S.
  * 
  * Generates all futuristic, cinematic UI & startup soundscapes procedurally using the Web Audio API:
  * - Zero external assets / zero network dependencies / zero 404s
@@ -19,7 +19,7 @@ class AudioManager {
 
     // Load user mute preference
     try {
-      const savedMute = localStorage.getItem('jarvis_audio_muted');
+      const savedMute = localStorage.getItem('nexus_audio_muted') ?? localStorage.getItem('jarvis_audio_muted');
       if (savedMute !== null) {
         this.isMuted = savedMute === 'true';
       }
@@ -76,7 +76,8 @@ class AudioManager {
   setMuted(muted) {
     this.isMuted = Boolean(muted);
     try {
-      localStorage.setItem('jarvis_audio_muted', String(this.isMuted));
+      localStorage.setItem('nexus_audio_muted', String(this.isMuted));
+      try { localStorage.setItem('jarvis_audio_muted', String(this.isMuted)); } catch (e2) {}
     } catch (e) { }
 
     if (this.masterGain && this.ctx) {

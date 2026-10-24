@@ -1,8 +1,10 @@
-# J.A.R.V.I.S.
+# N.E.X.U.S.
 
-## Just A Rather Very Intelligent System
+## Networked EXpert for Unified Synthesis
 
-**A Windows-first, local-first AI agent that can understand a task, plan it, control the computer, observe what happened, verify the result, recover from failures, and continue.**
+*A direct-command assistant — clear requests, supported actions, honest results.*
+
+**A Windows-first, local-first AI assistant that understands requests, runs direct commands, manages files, research, and documents, and reports clear results.**
 
 [![Python](https://img.shields.io/badge/Python-3.10--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Windows](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
@@ -10,18 +12,18 @@
 [![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react&logoColor=black)](https://react.dev/)
 [![Playwright](https://img.shields.io/badge/Browser-Playwright-45BA4B?logo=playwright&logoColor=white)](https://playwright.dev/)
 
-> **JARVIS is built around an agent loop, not a chat-only interface:**  
-> **Understand → Plan → Validate → Execute → Observe → Verify → Recover/Retry → Continue**
+> **NEXUS is built around direct commands, not a chat-only interface:**  
+> **Understand → Respond → Act on supported commands → Report clearly**
 
 ---
 
-## What is JARVIS?
+## What is NEXUS?
 
-JARVIS is an open development project for a **general-purpose AI computer agent for Windows**.
+NEXUS is an open development project for a **general-purpose AI assistant for Windows**.
 
-Instead of only generating text, JARVIS is designed to turn natural-language instructions into real computer actions and then check whether those actions actually worked.
+Instead of only generating text, NEXUS turns natural-language instructions into supported direct actions and reports clear results.
 
-The goal is a single agent with many tools — not a collection of disconnected mini-agents.
+The goal is a single assistant with many tools — not a collection of disconnected utilities.
 
 ### Core idea
 
@@ -30,14 +32,14 @@ The goal is a single agent with many tools — not a collection of disconnected 
                       │
                       ▼
               ┌───────────────┐
-              │    J.A.R.V.I.S│
-              │   Agent Core  │
+              │    N.E.X.U.S  │
+              │ Command Layer │
               └───────┬───────┘
                       │
-             Understand → Plan
+             Understand request
                       │
                       ▼
-                   Execute
+                 Direct command
                       │
         ┌─────────────┼─────────────┐
         ▼             ▼             ▼
@@ -45,36 +47,20 @@ The goal is a single agent with many tools — not a collection of disconnected 
         │             │             │
         └─────────────┼─────────────┘
                       ▼
-                   OBSERVE
-                      │
-                      ▼
-                   VERIFY
-                      │
-                ┌─────┴─────┐
-                │           │
-             SUCCESS     FAILURE
-                │           │
-                ▼           ▼
-             CONTINUE    RECOVER
-                            │
-                            ▼
-                         CONTINUE
+                 Clear result
 ```
 
 ---
 
-## What can JARVIS do?
+## What can NEXUS do?
 
-### 🧠 Agentic task execution
+### 🧠 Natural-language commands
 
-- Natural-language task understanding and planning
-- Multi-step task execution
-- Persistent task state and context
-- Observation after actions
-- Verification before reporting completion
-- Recovery and retry for recoverable failures
-- Human-in-the-loop escalation when automation is genuinely blocked
-- Persistent conversation/memory features
+- Natural-language command understanding
+- Direct single-step actions
+- Conversation history and memory
+- Reminders, notes, and todos
+- Clear spoken and logged results
 
 ### 🖥️ Windows computer control
 
@@ -100,7 +86,7 @@ The goal is a single agent with many tools — not a collection of disconnected 
 
 ### 📄 Research → Word / PowerPoint
 
-JARVIS is designed to **analyze research before generating an artifact**.
+NEXUS is designed to **analyze research before generating an artifact**.
 
 ```text
 Discover
@@ -130,7 +116,7 @@ It can generate:
 - Presentation images
 - PDF text extraction
 
-Generated artifacts are exposed through the JARVIS files/gallery system.
+Generated artifacts are exposed through the NEXUS files/gallery system.
 
 ### 📁 File analysis & document Q&A
 
@@ -143,7 +129,7 @@ Generated artifacts are exposed through the JARVIS files/gallery system.
 
 ### 🛠️ Code Intelligence
 
-JARVIS includes a Code Core for inspecting and repairing its own codebase.
+NEXUS includes a Code Core for inspecting and repairing its own codebase.
 
 - AST / syntax checks
 - `py_compile` validation
@@ -158,41 +144,62 @@ JARVIS includes a Code Core for inspecting and repairing its own codebase.
 
 ### 🎙️ Voice
 
-JARVIS includes Windows/browser-oriented voice capabilities and is designed to support natural voice interaction as the project evolves.
+NEXUS includes Windows/browser-oriented voice capabilities and is designed to support natural voice interaction as the project evolves.
 
 ### 📱 Additional capabilities
 
-JARVIS also contains **Android/ADB and phone-mirroring functionality**.
+NEXUS also contains **Android/ADB and phone-mirroring functionality**.
 
-These capabilities are part of the project but are **not the current primary development focus**. Current development is concentrated on the Windows agent, computer use, browser control, observation, verification, memory, research, voice and code intelligence.
+These capabilities are part of the project but are **not the current primary development focus**. Current development is concentrated on Windows commands, browser control, memory, research, voice and code intelligence.
 
 The same principle applies to supporting utilities such as the watchdog: they remain part of the project where implemented, even when they are not the current development priority.
+
+### 🗄️ Zetaris AI Data Gateway (Read-Only SQL)
+
+NEXUS includes a read-only connector for the **Zetaris AI Data Gateway** — a local data virtualization platform that exposes registered data sources (PostgreSQL, MySQL, CSV, Parquet, etc.) through a unified SQL interface.
+
+**Commands:**
+```
+zetaris: test connection
+zetaris: query SELECT * FROM NY_TAXI.customers LIMIT 2
+zetaris: run SELECT COUNT(*) FROM NY_TAXI.trips
+zetaris: SELECT * FROM TPCDS_DB.store_sales LIMIT 5
+```
+
+**Features:**
+- HTTP Basic authentication via Zetaris UI proxy (port 3000)
+- Bearer token session management (auto-login, cached in memory)
+- SELECT/WITH queries only — writes and DDL rejected
+- Configurable row limits (default 50, max 100 per query)
+- Query pagination (auto-fetches additional pages up to limit)
+- Query token cleanup (always closes server-side cursor)
+- Timeouts and error handling with actionable messages
+- Credentials stored in gitignored `config.json` (never committed)
+
+**Requires:** Local Zetaris deployment (Docker Compose) with sample data (NY_TAXI, TPCDS_DB).
 
 ---
 
 ## Architecture
 
-JARVIS separates the model layer from the tool/runtime layer.
+NEXUS separates the model layer from the tool/runtime layer.
 
 ### Model roles
 
-- **Gemini** — normal conversation, planning and supported vision tasks
+- **Gemini** — conversation and supported vision tasks
 - **NVIDIA NIM / Nemotron** — code intelligence and repair workflows
 - Other configured providers can be used for supported optional features
 
 ### Runtime
 
 ```text
-JARVIS
+NEXUS
 │
-├── Agent Core
-│   ├── Planner
-│   ├── Executor
-│   ├── State
-│   ├── Observer
-│   ├── Verifier
-│   ├── Recovery
-│   └── Memory
+├── Command Runtime (/api/command)
+│   ├── Memory / conversation history
+│   ├── Notifications / reminders
+│   ├── Voice / language helpers
+│   └── Recovery (crash repair with rollback)
 │
 ├── Computer Tools
 │   └── Windows UI Automation
@@ -223,27 +230,26 @@ JARVIS
 ### Repository structure
 
 ```text
-JARVIS/
+NEXUS/
 ├── main.py
 ├── agent.py
 ├── system_ops.py
 ├── code_core.py
 ├── document_intel.py
 ├── phone_control.py
-├── start_jarvis.py
+├── start_nexus.py
 ├── google_oauth.py
 │
 ├── backend/
 │   ├── agent/
-│   │   ├── core.py
-│   │   ├── planner.py
-│   │   ├── executor.py
-│   │   ├── state.py
-│   │   ├── observer.py
-│   │   ├── verifier.py
-│   │   ├── recovery_engine.py
-│   │   ├── research_synthesizer.py
-│   │   └── phase1_memory.py
+│   │   ├── notifications.py
+│   │   ├── phase1_memory.py
+│   │   ├── phase1_runtime.py
+│   │   ├── voice.py
+│   │   ├── lang_detect.py
+│   │   ├── hindi.py
+│   │   ├── marathi.py
+│   │   └── human_replies.py
 │   │
 │   └── tools/
 │       ├── computer.py
@@ -260,29 +266,29 @@ JARVIS/
 
 ---
 
-## Why JARVIS?
+## Why NEXUS?
 
 The project is focused on moving from:
 
 ```text
 AI that tells you what to do
           ↓
-AI that plans what to do
+AI that understands commands
           ↓
-AI that actually does it
+AI that acts on supported tasks
           ↓
-AI that checks whether it worked
+AI that reports results clearly
           ↓
-AI that can recover and continue
+AI that stays within its scope
 ```
 
-The important part is **closed-loop execution**.
+The important part is **clear, honest results**.
 
-JARVIS should not simply say:
+NEXUS should not simply say:
 
 > "Done."
 
-It should have evidence from execution and verification before reporting success.
+It reports what it did, and says plainly when something is outside its scope.
 
 ---
 
@@ -298,14 +304,22 @@ It should have evidence from execution and verification before reporting success
 
 ### Optional service credentials
 
-JARVIS can use configured external AI services for specific capabilities. Credentials are feature-dependent.
+NEXUS can use configured external AI services for specific capabilities. Credentials are feature-dependent.
 
 | Configuration | Purpose |
 |---|---|
-| `gemini_api_key` | Conversation, planning, supported vision/OCR and document Q&A |
+| `gemini_api_key` | Conversation, memory, supported vision/OCR and document Q&A |
 | `nvidia_api_key` | Code intelligence / Nemotron workflows |
 | `huggingface_api_key` | Optional image-generation fallback |
+| `groq_api_key` | Cloud fallback for voice transcription (free at console.groq.com) |
 | Google OAuth configuration | Supported protected Google features |
+| `zetaris_base_url` | Zetaris UI origin (default: http://localhost:3000) |
+| `zetaris_username` | Zetaris login email |
+| `zetaris_password` | Zetaris login password |
+| `zetaris_org_id` | Numeric organization ID from Zetaris UI |
+| `zetaris_default_limit` | Default rows per query (1-100, default: 50) |
+| `zetaris_max_limit` | Hard cap on rows per query (1-100, default: 100) |
+| `zetaris_timeout_seconds` | Request timeout (default: 30) |
 
 The project is designed so that missing optional credentials produce a clear feature-specific limitation rather than silently pretending a capability worked.
 
@@ -318,8 +332,8 @@ Python dependencies are listed in **`requirements.txt`**.
 Clone the repository:
 
 ```bash
-git clone https://github.com/TAHA-SHAIKH27/JARVIS.git
-cd JARVIS
+git clone https://github.com/TAHA-SHAIKH27/NEXUS.git
+cd NEXUS
 ```
 
 Create a virtual environment:
@@ -350,7 +364,7 @@ Configure the services you want to use through the project's local configuration
 
 ## First run on a new machine
 
-JARVIS is **offline-first**: a fresh clone with *zero* API keys still runs. Local commands (volume, screenshots, timers, files, math, weather via IP location, jokes, Hindi/Marathi/English offline replies), reminders, notes and the full dashboard all work. AI features light up as you add keys below.
+NEXUS is **offline-first**: a fresh clone with *zero* API keys still runs. Local commands (volume, screenshots, timers, files, math, weather via IP location, jokes, Hindi/Marathi/English offline replies), reminders, notes and the full dashboard all work. AI features light up as you add keys below.
 
 ### 1. Add API keys (all optional, easiest via the UI)
 
@@ -363,13 +377,28 @@ Open the dashboard → **Settings** (gear icon) and paste keys, or create `confi
   "gemini_project_id": "",
   "groq_api_key": "",
   "nvidia_api_key": "nvapi-…",
-  "nvidia_model": "z-ai/glm-5.3-flash"
+  "nvidia_model": "z-ai/glm-5.3-flash",
+  "zetaris_base_url": "http://localhost:3000",
+  "zetaris_username": "admin@zetaris.com",
+  "zetaris_password": "Zetaris1@",
+  "zetaris_org_id": "1",
+  "zetaris_default_limit": 50,
+  "zetaris_max_limit": 100,
+  "zetaris_timeout_seconds": 30
 }
 ```
 
 | Key | Unlocks |
 |---|---|
-| `gemini_api_key` | Full conversation, planning, vision, document Q&A (or link Google in Settings instead) |
+| `gemini_api_key` | Full conversation, memory, vision, document Q&A (or link Google in Settings instead) |
+| `groq_api_key` | Cloud fallback for voice transcription (free at console.groq.com) |
+| `nvidia_api_key` | Code Core audits and repairs |
+| `huggingface_api_key` | Image generation |
+| `zetaris_*` | Zetaris AI Data Gateway read-only SQL queries (requires local Zetaris deployment) |
+
+| Key | Unlocks |
+|---|---|
+| `gemini_api_key` | Full conversation, memory, vision, document Q&A (or link Google in Settings instead) |
 | `groq_api_key` | Cloud fallback for voice transcription (free at console.groq.com) |
 | `nvidia_api_key` | Code Core audits and repairs |
 | `huggingface_api_key` | Image generation |
@@ -380,7 +409,7 @@ Open the dashboard → **Settings** (gear icon) and paste keys, or create `confi
 Copy-Item .env.example .env
 ```
 
-Only needed for phone mirroring (`JARVIS_ADB_PATH`, `JARVIS_PHONE_PIN`) or voice fallback (`GROQ_API_KEY`). Everything has a working default without it.
+Only needed for phone mirroring (`NEXUS_ADB_PATH`, `NEXUS_PHONE_PIN`) or voice fallback (`GROQ_API_KEY`). Everything has a working default without it.
 
 ### 3. Optional: Gmail + Google
 
@@ -407,12 +436,12 @@ All runtime folders (`work_files/`, `backend/data/`, `downloads/`) are **auto-cr
 
 ---
 
-## Running JARVIS
+## Running NEXUS
 
 The convenience launcher can start the backend and frontend:
 
 ```bash
-python start_jarvis.py
+python start_nexus.py
 ```
 
 Or run them separately:
@@ -443,15 +472,10 @@ http://127.0.0.1:8000/docs
 ## Development principles
 
 1. Prefer semantic UI Automation over guessed coordinates.
-2. Observe the environment before acting when practical.
-3. Verify important actions instead of assuming they succeeded.
-4. Recover or re-plan recoverable failures.
-5. Ask for human intervention when automation is genuinely blocked.
-6. Never claim an action succeeded without execution/verification evidence.
-7. Keep persistent memory separate from temporary task state.
-8. Keep automation bounded and recoverable.
-9. Make targeted changes and fix root causes rather than symptoms.
-10. Preserve existing working functionality while expanding the agent.
+2. Report results honestly instead of assuming success.
+3. Keep actions bounded and recoverable.
+4. Make targeted changes and fix root causes rather than symptoms.
+5. Preserve existing working functionality.
 
 ---
 
@@ -475,20 +499,15 @@ Use environment variables or a **gitignored** local configuration file.
 
 ## Current development focus
 
-JARVIS contains many capabilities, but development is intentionally focused rather than attempting to build everything simultaneously.
+NEXUS contains many capabilities, but development is intentionally focused rather than attempting to build everything simultaneously.
 
 ### Current priority
 
-- Agent intelligence
-- Computer Use
+- Conversation and memory
 - Browser automation
-- Observation and perception
-- Verification
-- Recovery
-- Memory
 - Voice
 - Research and document generation
-- Code Intelligence / self-debugging
+- Code Intelligence
 
 ### Existing but lower-priority capabilities
 
@@ -497,17 +516,17 @@ JARVIS contains many capabilities, but development is intentionally focused rath
 - Watchdog/support utilities
 - Additional experimental integrations
 
-These are **not removed from JARVIS**. They are simply outside the main development path at the moment.
+These remain part of NEXUS. They are simply outside the main development path at the moment.
 
 ---
 
 ## Roadmap
 
-### Phase 1 — Agent Intelligence
-Memory, context, reminders, planner and task state.
+### Phase 1 — Conversation and Memory
+Memory, context, and reminders.
 
-### Phase 2 — Computer Use & Vision
-Windows UI Automation, browser control, observation, verification and agent execution.
+### Phase 2 — Desktop Control & Vision
+Windows UI Automation, browser control, and vision support.
 
 ### Phase 3 — Research & Presentation Generation
 Source extraction, analysis, comparison, synthesis and structured Word/PPT generation.
@@ -520,17 +539,17 @@ Self-audit, Nemotron repair, validation, rollback and uploaded-file inspection.
 
 ### Future expansion
 
-Continue improving the core agent while gradually bringing additional existing capabilities and experimental integrations into the main workflow.
+Continue improving the core assistant while gradually bringing additional existing capabilities into the main workflow.
 
 ---
 
 ## Contributing
 
-JARVIS is an evolving project.
+NEXUS is an evolving project.
 
 If you want to contribute:
 
-1. Understand the current agent architecture.
+1. Understand the current architecture.
 2. Keep changes focused.
 3. Preserve existing functionality.
 4. Test changes before submitting them.
@@ -547,6 +566,8 @@ No open-source license has currently been declared in this repository. Until a l
 
 ## Project
 
-**J.A.R.V.I.S. — Just A Rather Very Intelligent System**
+**N.E.X.U.S. — Networked EXpert for Unified Synthesis**
 
-Built with the goal of creating a capable, transparent and extensible AI agent that can move beyond conversation into real computer interaction.
+*A direct-command assistant — clear requests, supported actions, honest results.*
+
+Built with the goal of creating a capable, transparent and extensible AI assistant for everyday computer tasks.

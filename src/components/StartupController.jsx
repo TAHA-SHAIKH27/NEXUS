@@ -20,10 +20,10 @@ export const STARTUP_STATES = {
 // ── Live Scan Animation Component ──────────────────────────────────────────
 const FAKE_FILES = [
   'backend/startup_engine.py', 'backend/tools/browser.py', 'backend/tools/office.py',
-  'backend/tools/vision.py', 'backend/tools/terminal.py', 'backend/agent/core.py',
+  'backend/tools/vision.py', 'backend/tools/terminal.py', 'backend/tools/computer.py',
   'main.py', 'code_core.py', 'system_ops.py', 'phone_control.py',
   'src/App.jsx', 'src/CoreSphere.jsx', 'src/components/StartupController.jsx',
-  'src/components/Jarvis3DCore.jsx', 'src/audio/AudioManager.js',
+  'src/components/Nexus3DCore.jsx', 'src/audio/AudioManager.js',
   'src/hooks/useVoice.js', 'src/index.css', 'src/startup.css',
   'backend/tools/scheduler.py', 'backend/tools/gmail_notify.py',
   'backend/data/session_memory.json', 'config.json', 'package.json',
@@ -165,7 +165,7 @@ function ToolsScanAnimation() {
       {/* Header bar */}
       <div className="scan-anim-header">
         <span className="scan-anim-dot" />
-        <span>TOOLS & AGENTS CHECK</span>
+        <span>TOOLS CHECK</span>
         <span className="scan-anim-count">{Math.round(progress)}% — 7 MODULES</span>
       </div>
 
@@ -217,7 +217,7 @@ export default function StartupController({
   const [auditScanned, setAuditScanned] = useState(0);
   const [toolsCheckActive, setToolsCheckActive] = useState(false);
   const [telemetryLines, setTelemetryLines] = useState([
-    { label: 'J.A.R.V.I.S. SYSTEM', val: 'INITIALIZING' },
+    { label: 'N.E.X.U.S. SYSTEM', val: 'INITIALIZING' },
     { label: 'CORE KERNEL', val: 'STANDBY' },
     { label: 'PERCEPTION', val: 'PENDING' },
     { label: 'AUTOMATION TOOLS', val: 'PENDING' },
@@ -254,7 +254,7 @@ export default function StartupController({
 
         evtSource.addEventListener('BOOT', () => {
           if (didCancel) return;
-          updateTelemetry('J.A.R.V.I.S. SYSTEM', 'BOOT INITIALIZED', 'ok');
+          updateTelemetry('N.E.X.U.S. SYSTEM', 'BOOT INITIALIZED', 'ok');
         });
 
         evtSource.addEventListener('CORE_ONLINE', () => {
@@ -488,7 +488,7 @@ export default function StartupController({
 
       {/* 3. Corner HUD Diagnostics & Sound Toggle */}
       <div className="hud-corner top-left">
-        <div>SYS.ID // J.A.R.V.I.S. MK-VII</div>
+        <div>SYS.ID // N.E.X.U.S. MK-VII</div>
         <div>BAND // 144.82 MHz [ENC: AES-256]</div>
       </div>
 
@@ -510,14 +510,14 @@ export default function StartupController({
       </div>
 
       <div className="hud-corner bottom-right">
-        <div>AUTONOMOUS RUNTIME // STANDBY</div>
+        <div>DIRECT RUNTIME // STANDBY</div>
         <div>SECURITY // LEVEL 4 CERTIFIED</div>
       </div>
 
       {/* 4. Original CoreSphere — cinematic reveal driven by CSS phase classes */}
       <div className={`cinematic-core-stage`}>
         <div className={`cinematic-sphere-phase phase-${phase}`}>
-          <CoreSphere state="idle" agentMode={false} startupPhase={phase} />
+          <CoreSphere state="idle" startupPhase={phase} />
         </div>
       </div>
 
@@ -539,7 +539,7 @@ export default function StartupController({
       <div className={`startup-telemetry-console ${isScanning || showToolsScan ? 'is-scanning' : ''}`}>
         <div className="startup-main-label">
           <span className="startup-live-pulse" />
-          <span>{isScanning ? 'INTEGRITY SCAN IN PROGRESS' : showToolsScan ? 'TOOLKIT VERIFICATION IN PROGRESS' : 'J.A.R.V.I.S. INITIALIZING'}</span>
+          <span>{isScanning ? 'INTEGRITY SCAN IN PROGRESS' : showToolsScan ? 'TOOLKIT VERIFICATION IN PROGRESS' : 'N.E.X.U.S. INITIALIZING'}</span>
         </div>
 
         <div className="startup-log-lines">

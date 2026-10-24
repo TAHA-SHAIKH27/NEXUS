@@ -8,7 +8,7 @@ import pyautogui
 import tempfile
 from datetime import datetime
 
-# Root folder for Jarvis's work files
+# Root folder for Nexus's work files
 WORK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "work_files"))
 if not os.path.exists(WORK_DIR):
     os.makedirs(WORK_DIR)
@@ -113,7 +113,7 @@ def close_application(app_name: str) -> dict:
         return {"status": "error", "message": f"No running application found matching: {app_name}"}
 
 def list_files(subdir: str = "") -> dict:
-    """List all files in the Jarvis work files directory."""
+    """List all files in the Nexus work files directory."""
     target_dir = os.path.abspath(os.path.join(WORK_DIR, subdir))
     # Prevent directory traversal attacks
     if not target_dir.startswith(WORK_DIR):
@@ -161,7 +161,7 @@ _ROOT_SEARCH_SKIP = {
 
 
 def _strip_folder_phrases(raw: str) -> str:
-    """Turn 'requirements.txt in the jarvis (claude) folder' into a filename."""
+    """Turn 'requirements.txt in the nexus (claude) folder' into a filename."""
     text = (raw or "").strip().strip("\"'").replace("\\", "/")
     # Drop trailing folder phrases: "in X", "from X folder", "under X dir".
     text = re.split(r"\s+(?:in|from|under|inside|of)\s+", text, maxsplit=1)[0].strip()
@@ -292,7 +292,7 @@ def delete_file(filename: str) -> dict:
         return resolved
     path = resolved["path"]
 
-    # Safety: project-root files are read-only through JARVIS; only the
+    # Safety: project-root files are read-only through NEXUS; only the
     # work-files tree may be deleted.
     if not os.path.abspath(path).startswith(os.path.abspath(WORK_DIR) + os.sep):
         return {"status": "error",
@@ -325,7 +325,7 @@ def take_screenshot() -> dict:
     """Take a screenshot of the main screen and return its status.
 
     Saves into the laptop's main Screenshots folder and mirrors a copy
-    into work_files/screenshots so the JARVIS album shows it."""
+    into work_files/screenshots so the NEXUS album shows it."""
     try:
         img_dir = get_screenshots_dir()
         filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
@@ -350,7 +350,7 @@ def get_desktop_path():
 def get_screenshots_dir():
     """The laptop's main Screenshots folder (Pictures\\Screenshots).
 
-    Every screenshot JARVIS takes lands here so it sits alongside the
+    Every screenshot NEXUS takes lands here so it sits alongside the
     user's own captures. Falls back to work_files/screenshots when the
     Pictures folder is unavailable. Always returns an existing directory."""
     user_profile = os.environ.get("USERPROFILE", "")
@@ -370,14 +370,14 @@ def get_screenshots_dir():
     return fallback
 
 def get_documents_dir():
-    """JARVIS work documents folder (Word/PPT/PDF artifacts live here)."""
+    """NEXUS work documents folder (Word/PPT/PDF artifacts live here)."""
     doc_dir = os.path.join(WORK_DIR, "documents")
     os.makedirs(doc_dir, exist_ok=True)
     return doc_dir
 
 def mirror_into_gallery(src_path: str) -> str:
     """Copy a laptop-side screenshot into work_files/screenshots so the
-    JARVIS album (/api/gallery → pc_screenshot) shows it too.
+    NEXUS album (/api/gallery → pc_screenshot) shows it too.
     Returns the gallery copy path, or '' when the copy was impossible
     (e.g. source already inside work_files). Never raises."""
     try:
@@ -925,7 +925,7 @@ def media_control(action: str) -> dict:
 def search_web(query: str) -> dict:
     """Open Google results AND speak a one-paragraph instant answer.
 
-    The browser still opens for depth, but Jarvis now reads out the
+    The browser still opens for depth, but Nexus now reads out the
     short answer (DuckDuckGo instant answers, keyless) when one exists —
     so "who won..." / "capital of..." get answered aloud, not just shown.
     """
@@ -1096,7 +1096,7 @@ def open_folder(target: str) -> dict:
             "workspace": WORK_DIR,
             "work files": WORK_DIR,
             "workfiles": WORK_DIR,
-            "jarvis": os.path.abspath(os.path.join(os.path.dirname(__file__))),
+            "nexus": os.path.abspath(os.path.join(os.path.dirname(__file__))),
             "project": os.path.abspath(os.path.join(os.path.dirname(__file__))),
         }
         # "my downloads folder" / "the downloads" -> "downloads"
@@ -1468,7 +1468,7 @@ def get_weather(city: str, day: int = 0) -> dict:
             day = 0
         city_encoded = urllib.parse.quote((city or "").strip() or "auto")
         url = f"https://wttr.in/{city_encoded}?format=j1"
-        req = urllib.request.Request(url, headers={"User-Agent": "JARVIS/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "NEXUS/1.0"})
         with urllib.request.urlopen(req, timeout=8) as r:
             data = __import__('json').loads(r.read().decode('utf-8'))
 
@@ -1600,7 +1600,7 @@ def press_key(key: str, modifiers: list = None) -> dict:
 
 def archive_document_artifact(file_path: str) -> str:
     """Copy a generated file (DOCX, PPTX, PDF, images, etc.) into work_files/documents
-    (or work_files subfolders) so it appears persistently in the JARVIS files & album gallery."""
+    (or work_files subfolders) so it appears persistently in the NEXUS files & album gallery."""
     try:
         if not file_path or not os.path.isfile(file_path):
             return ""

@@ -1,5 +1,5 @@
 """
-startup_engine.py — Production-grade startup lifecycle & real initialization for J.A.R.V.I.S.
+startup_engine.py — Production-grade startup lifecycle & real initialization for N.E.X.U.S.
 
 Executes genuine system checks, code audit (exact dynamic file count), subsystem diagnostics,
 scheduled reminders, authorized communications, live sourced AI & local news, and dynamic
@@ -105,7 +105,7 @@ class StartupEngine:
             ("backend.tools.browser", "browser"),
             ("backend.tools.terminal", "terminal"),
             ("backend.tools.office", "office"),
-            ("backend.tools.computer", "computer_use"),
+            ("backend.tools.computer", "computer"),
             ("phone_control", "phone_control"),
         ]:
             try:
@@ -216,7 +216,7 @@ class StartupEngine:
         try:
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) JARVIS/2.0"},
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NEXUS/2.0"},
             )
             with urllib.request.urlopen(req, timeout=4.5) as resp:
                 xml_data = resp.read()
@@ -258,7 +258,7 @@ class StartupEngine:
             # If network or rate limit, provide verified notice rather than fake news
             items = [{
                 "title": "Global AI ecosystem active; external news feed momentarily unreachable.",
-                "source": "JARVIS Telemetry",
+                "source": "NEXUS Telemetry",
                 "link": "",
                 "published": datetime.now().strftime("%a, %d %b %Y %H:%M:%S GMT"),
             }]
@@ -280,7 +280,7 @@ class StartupEngine:
         try:
             req = urllib.request.Request(
                 url,
-                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) JARVIS/2.0"},
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NEXUS/2.0"},
             )
             with urllib.request.urlopen(req, timeout=4.5) as resp:
                 xml_data = resp.read()
@@ -383,7 +383,7 @@ class StartupEngine:
 
         # AI News synthesis (approx 2 key headlines mentioned cleanly)
         ai_news_phrase = ""
-        valid_ai = [item for item in ai_news if item.get("title") and item.get("source") != "JARVIS Telemetry"]
+        valid_ai = [item for item in ai_news if item.get("title") and item.get("source") != "NEXUS Telemetry"]
         if valid_ai:
             top_ai = valid_ai[0]
             clean_title = re.sub(r'[\"\']', '', top_ai["title"]).strip()
@@ -490,7 +490,7 @@ class StartupEngine:
         # Step 1: Boot acknowledgment
         yield format_sse("BOOT", {
             "time": datetime.now().isoformat(),
-            "message": "J.A.R.V.I.S. Core boot sequence initiated",
+            "message": "N.E.X.U.S. Core boot sequence initiated",
         })
         await asyncio.sleep(0.4)
 

@@ -1,7 +1,7 @@
 import React from 'react';
-import { Settings, Mic, MicOff, Brain, X, Bell } from 'lucide-react';
+import { Settings, Mic, MicOff, Bell } from 'lucide-react';
 
-export default function Header({ online, netState, busy, chatMode, setChatMode, isSpeaking, onOpenSettings, voiceActive, toggleVoice, voiceEnabled, setVoiceEnabled, onToggleVoiceEnabled, agentMode, setAgentMode, agentStatus, unreadCount = 0, onOpenNotifications }) {
+export default function Header({ online, netState, busy, chatMode, setChatMode, isSpeaking, onOpenSettings, voiceActive, toggleVoice, voiceEnabled, setVoiceEnabled, onToggleVoiceEnabled, unreadCount = 0, onOpenNotifications }) {
   const NET_LABELS = {
     online: ['ONLINE', ''],
     wifi_off: ['WIFI OFF', 'offline'],
@@ -17,7 +17,7 @@ export default function Header({ online, netState, busy, chatMode, setChatMode, 
   let statusTitle = 'All systems operational';
   if (!online) {
     statusLabel = 'OFFLINE'; statusClass = 'offline';
-    statusTitle = 'JARVIS backend unreachable';
+    statusTitle = 'NEXUS backend unreachable';
   } else if (netState && netState !== 'online') {
     const entry = NET_LABELS[netState];
     if (entry) {
@@ -29,12 +29,11 @@ export default function Header({ online, netState, busy, chatMode, setChatMode, 
     if (busy) statusLabel = 'PROCESSING', statusClass = 'busy';
     else if (isSpeaking) statusLabel = 'SPEAKING', statusClass = 'awake';
     else if (voiceActive) statusLabel = 'LISTENING', statusClass = 'awake';
-    else if (agentMode) statusLabel = 'AGENT', statusClass = 'agent';
   }
 
   return (
     <div className="topbar-header">
-      <div className="wordmark">J.A.R.V.I.S.</div>
+      <div className="wordmark">N.E.X.U.S.</div>
 
       <div className="header-cluster">
         <div className="status-pill" title={statusTitle}>
@@ -59,14 +58,6 @@ export default function Header({ online, netState, busy, chatMode, setChatMode, 
         </button>
 
         <button
-          className={`icon-btn ${agentMode ? 'active' : ''}`}
-          onClick={() => setAgentMode(!agentMode)}
-          title={agentMode ? 'Exit Agent Mode' : 'Enter Agent Mode'}
-        >
-          {agentMode ? <X size={15} /> : <Brain size={15} />}
-        </button>
-
-        <button
           className="icon-btn notif-btn"
           onClick={onOpenNotifications}
           title={unreadCount > 0 ? `${unreadCount} unread notification${unreadCount === 1 ? '' : 's'} — open Notification Center` : 'Open Notification Center'}
@@ -83,8 +74,8 @@ export default function Header({ online, netState, busy, chatMode, setChatMode, 
         <button
           className={`icon-btn ${voiceEnabled ? 'active' : ''}`}
           onClick={onToggleVoiceEnabled || (() => setVoiceEnabled(v => !v))}
-          title={voiceEnabled ? 'Mute JARVIS voice' : 'Unmute JARVIS voice'}
-          aria-label={voiceEnabled ? 'Mute JARVIS voice' : 'Unmute JARVIS voice'}
+          title={voiceEnabled ? 'Mute NEXUS voice' : 'Unmute NEXUS voice'}
+          aria-label={voiceEnabled ? 'Mute NEXUS voice' : 'Unmute NEXUS voice'}
         >
           {voiceEnabled ? '🔊' : '🔇'}
         </button>
@@ -93,12 +84,6 @@ export default function Header({ online, netState, busy, chatMode, setChatMode, 
           <Settings size={15} />
         </button>
       </div>
-
-      {agentMode && (
-        <div className="agent-status-bar">
-          <span>Agent: {agentStatus}</span>
-        </div>
-      )}
     </div>
   );
 }

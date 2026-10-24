@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 
-const DISMISS_KEY = 'jarvis_audit_dismissed'
+const DISMISS_KEY = 'nexus_audit_dismissed'
 
 export default function StartupAuditBanner({ onOpenCode }) {
   const [phase, setPhase] = useState('loading') // loading | notify | fixing | done | none

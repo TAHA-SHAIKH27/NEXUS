@@ -1,6 +1,6 @@
-"""gmail_notify.py — proactive Gmail watcher for J.A.R.V.I.S.
+"""gmail_notify.py — proactive Gmail watcher for N.E.X.U.S.
 
-Normal (non-agentic) JARVIS announces important mail as it arrives:
+Direct NEXUS announces important mail as it arrives:
 "Sir, important mail from X: <subject>." — spoken aloud via the voice
 system plus an on-screen toast, without being asked.
 

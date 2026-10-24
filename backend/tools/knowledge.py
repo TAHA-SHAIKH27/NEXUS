@@ -1,4 +1,4 @@
-"""knowledge.py — offline-first answer engine for J.A.R.V.I.S.
+"""knowledge.py — offline-first answer engine for N.E.X.U.S.
 
 Takes everyday Q&A from "basic" to genuinely useful without any API key:
 
@@ -54,7 +54,7 @@ def _write_json(path: str, value: Any) -> None:
 
 def _http_get_json(url: str, timeout: float = 6.0) -> Optional[Any]:
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": "JARVIS/1.0"})
+        req = urllib.request.Request(url, headers={"User-Agent": "NEXUS/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as r:
             return json.loads(r.read().decode("utf-8"))
     except Exception:
@@ -480,7 +480,7 @@ def instant_answer(query: str) -> Dict[str, Any]:
 def quick_math_detect(prompt: str) -> Optional[str]:
     """Return an expression string if the prompt is plainly a sum, else None."""
     p = (prompt or "").strip().lower()
-    p = re.sub(r"^(jarvis[, ]\s*)?(please\s+)?(what(?:'s| is)|calculate|compute|evaluate|solve)\s+", "", p).strip()
+    p = re.sub(r"^(nexus[, ]\s*)?(please\s+)?(what(?:'s| is)|calculate|compute|evaluate|solve)\s+", "", p).strip()
     p = re.sub(r"\s*(please|thanks|thank you)\s*[?.!]?\s*$", "", p).strip()
     p = p.rstrip("?.!").strip()
     if _PERCENT_OF_RE.search(p) or _PERCENT_ADD_RE.search(p):

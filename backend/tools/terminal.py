@@ -1,6 +1,6 @@
-"""Safe terminal for agentic shell/git/test execution.
+"""Safe terminal for direct shell/git/test execution.
 
-Design: the agent runs ON the user's own machine, but task text can contain
+Design: commands run ON the user's own machine, but task text can contain
 untrusted content (web pages, filenames). So every command passes a policy
 gate before anything executes:
 
@@ -246,7 +246,7 @@ def run(command: str, workdir: str = "", timeout_s: int = DEFAULT_TIMEOUT_S) -> 
 
 def run_tests(target: str = "", extra_args: str = "",
               timeout_s: int = TEST_TIMEOUT_S) -> Dict[str, Any]:
-    """Run the pytest suite (agent's standard verification command)."""
+    """Run the pytest suite (standard verification command)."""
     parts = ["python", "-m", "pytest", "-q"]
     if target and target.strip():
         # Targets must stay inside the workspace.
@@ -274,7 +274,7 @@ def git_op(operation: str, args: str = "") -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Output summarization (agentic replies: short analysis, not raw dumps)
+# Output summarization (direct replies: short analysis, not raw dumps)
 # ─────────────────────────────────────────────────────────────────────────
 
 SUMMARY_CAP = 600
@@ -404,7 +404,7 @@ def _summarize_listing(stdout: str) -> str:
 
 
 def summarize_output(command: str, stdout: str, exit_code: int = 0) -> str:
-    """Turn raw command output into a short agentic summary (≤ ~600 chars).
+    """Turn raw command output into a short summary (≤ ~600 chars).
 
     Deterministic and instant (no LLM round-trip): parses the known shapes
     (git status/diff/log/branch, pytest, directory listings) and compresses

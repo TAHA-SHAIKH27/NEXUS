@@ -1,6 +1,6 @@
-"""scheduler.py — normal-mode reminders + scheduled WhatsApp for J.A.R.V.I.S.
+"""scheduler.py — reminders + scheduled WhatsApp for N.E.X.U.S.
 
-Normal (non-agentic) chat mode understands:
+Chat understands:
 
   Reminders (they actually FIRE — voice + toast when due):
     "remind me in 10 minutes to call mom"
@@ -1033,7 +1033,7 @@ def parse_scheduled_whatsapp(text: str) -> Optional[Dict[str, Any]]:
     raw = (text or "").strip()
     has_whatsapp = bool(re.search(r"\bwhatsapp\b", raw, re.I))
     # Generic "schedule/send a message …" (no explicit 'whatsapp') is treated
-    # as a WhatsApp schedule — the only scheduled-messaging channel JARVIS has.
+    # as a WhatsApp schedule — the only scheduled-messaging channel NEXUS has.
     has_generic_message = bool(
         re.search(r"\bmessage\b", raw, re.I)
         and re.search(r"\b(schedul\w*|send)\b", raw, re.I))
@@ -1292,4 +1292,4 @@ def ensure_scheduler_worker(on_reminder: Callable[[Dict[str, Any]], None],
             except Exception:
                 time.sleep(_TICK_SECONDS)
 
-    threading.Thread(target=_tick, name="jarvis-scheduler", daemon=True).start()
+    threading.Thread(target=_tick, name="nexus-scheduler", daemon=True).start()

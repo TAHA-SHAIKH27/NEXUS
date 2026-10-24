@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """
-start_jarvis.py
+start_nexus.py
 ---------------
-Startup script to run JARVIS backend + voice service together.
+Startup script to run NEXUS backend + voice service together.
 """
 import os
 import sys
@@ -32,7 +32,7 @@ def check_env():
 def run_backend():
     """Run FastAPI backend under Guardian Watchdog supervisor with auto-healing."""
     os.chdir(BACKEND_DIR)
-    cmd = [VENV_PYTHON, "jarvis_watchdog.py"]
+    cmd = [VENV_PYTHON, "nexus_watchdog.py"]
     print(f"[Start] Starting backend under Guardian Watchdog: {' '.join(cmd)}")
     return subprocess.Popen(cmd, env=os.environ.copy())
 

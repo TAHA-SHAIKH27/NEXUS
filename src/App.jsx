@@ -21,7 +21,7 @@ import Telemetry from './Telemetry';
 import CommandGrid from './CommandGrid';
 
 import CoreSphere from './CoreSphere';
-import Jarvis3DCore from './components/Jarvis3DCore';
+import Nexus3DCore from './components/Nexus3DCore';
 import StartupController from './components/StartupController';
 import PhonePanel from './PhonePanel';
 
@@ -160,7 +160,7 @@ export default function App() {
 
   const [messages, setMessages] = useState([
 
-    { role: 'jarvis', text: 'All systems online, sir. I am at your disposal.' }
+    { role: 'nexus', text: 'All systems online, sir. I am at your disposal.' }
 
   ])
 
@@ -181,6 +181,15 @@ export default function App() {
   const [groqKey, setGroqKey] = useState('')
   const [nvidiaKey, setNvidiaKey] = useState('')
   const [nvidiaModel, setNvidiaModel] = useState('meta/llama-3.3-70b-instruct')
+
+  // Zetaris config
+  const [zetarisBaseUrl, setZetarisBaseUrl] = useState('http://localhost:3000')
+  const [zetarisUsername, setZetarisUsername] = useState('')
+  const [zetarisPassword, setZetarisPassword] = useState('')
+  const [zetarisOrgId, setZetarisOrgId] = useState('')
+  const [zetarisDefaultLimit, setZetarisDefaultLimit] = useState(50)
+  const [zetarisMaxLimit, setZetarisMaxLimit] = useState(100)
+  const [zetarisTimeoutSeconds, setZetarisTimeoutSeconds] = useState(30)
 
   const [saveNote, setSaveNote] = useState('')
 
@@ -229,13 +238,6 @@ export default function App() {
   const [booting, setBooting] = useState(true)
   const [assembling, setAssembling] = useState(false) // true briefly after startup to play entry animations
   const [activeView, setActiveView] = useState('core')
-  const [agentMode, setAgentMode] = useState(false)
-  const [agentStatus, setAgentStatus] = useState('ready')
-  const [agentEvents, setAgentEvents] = useState([])
-  const [agentRunId, setAgentRunId] = useState('')
-  const [agentWaitingForHuman, setAgentWaitingForHuman] = useState(false)
-  const [agentQuestion, setAgentQuestion] = useState(null)
-  const [queuedTasks, setQueuedTasks] = useState([])
   const [voiceEnabled, setVoiceEnabled] = useState(true)
   const [clarificationPending, setClarificationPending] = useState(null)
 
@@ -253,7 +255,7 @@ export default function App() {
 
   const handleBriefingReady = useCallback((briefingText) => {
     if (briefingText) {
-      setMessages((m) => [...m, { role: 'jarvis', text: briefingText }])
+      setMessages((m) => [...m, { role: 'nexus', text: briefingText }])
       speak(briefingText, detectLang(briefingText))
     }
   }, [voiceEnabled])
@@ -269,7 +271,7 @@ export default function App() {
       }
     },
     onError: (error) => {
-      setMessages(m => [...m, { role: 'jarvis', text: `Voice error: ${error}` }]);
+      setMessages(m => [...m, { role: 'nexus', text: `Voice error: ${error}` }]);
     },
   });
 
@@ -293,7 +295,7 @@ export default function App() {
   // runVoiceCommand: like runCommand but does NOT add a user bubble
   // (the voice hook already adds it via onTranscript)
   //
-  // Bare stop-words spoken while JARVIS talks ("stop", "wait", …) silence
+  // Bare stop-words spoken while NEXUS talks ("stop", "wait", …) silence
   // him instantly via this pattern — no backend round-trip needed.
   const LOCAL_STOP_RE = /^(stop|wait|hold on|halt|quiet|shush|never mind|that'?s enough)$/i
 
@@ -314,10 +316,9 @@ export default function App() {
   }
 
   // ── ChatGPT-style thinking bubble (in-transcript progress) ──────────────
-  // A temporary jarvis message { thinking:true, stage, detail } sits at the
+  // A temporary nexus message { thinking:true, stage, detail } sits at the
   // end of the transcript while the backend works. Stages mirror ChatGPT:
-  // "Reading prompt" → "Thinking" → "Writing answer". Agent mode reuses the
-  // same bubble but streams live step detail into it.
+  // "Reading prompt" → "Thinking" → "Writing answer".
   // The bubble speaks the user's language: Devanagari prompt → Hindi labels.
   // Transcript language: Devanagari prompt → Hindi, unless Marathi
   // markers win (shared script). Drives thinking-bubble labels.
@@ -347,13 +348,13 @@ export default function App() {
   }
   function pushThinking(userText, initialStage = 'reading') {
     const lang = textLang(userText)
-    setMessages(m => [...m, { role: 'user', text: userText }, { role: 'jarvis', thinking: true, stage: initialStage, detail: '', text: '', lang }])
+    setMessages(m => [...m, { role: 'user', text: userText }, { role: 'nexus', thinking: true, stage: initialStage, detail: '', text: '', lang }])
     setPrompt('')
   }
 
   function pushThinkingNoBubble(initialStage = 'reading', userText = '') {
     const lang = textLang(userText)
-    setMessages(m => [...m, { role: 'jarvis', thinking: true, stage: initialStage, detail: '', text: '', lang }])
+    setMessages(m => [...m, { role: 'nexus', thinking: true, stage: initialStage, detail: '', text: '', lang }])
     setPrompt('')
   }
 
@@ -382,9 +383,9 @@ export default function App() {
       const copy = [...m]
       const last = copy[copy.length - 1]
       if (last && last.thinking) {
-        copy[copy.length - 1] = { role: 'jarvis', text: finalText }
+        copy[copy.length - 1] = { role: 'nexus', text: finalText }
       } else {
-        copy.push({ role: 'jarvis', text: finalText })
+        copy.push({ role: 'nexus', text: finalText })
       }
       return copy
     })
@@ -405,9 +406,9 @@ export default function App() {
   }
 
   // ── Human word-by-word typewriter (ChatGPT-style writing) ─────────────
-  // Normal + agentic replies arrive as one JSON string. Instead of dumping
+  // Normal replies arrive as one JSON string. Instead of dumping
   // the whole answer at once, we reveal it word-by-word so it reads like
-  // Jarvis is writing/reading it live. Streaming endpoints reuse the same
+  // Nexus is writing/reading it live. Streaming endpoints reuse the same
   // rhythm via pushStreamChunk() so network chunks never dump mid-sentence.
   const typewriterRef = useRef(null)
 
@@ -426,11 +427,11 @@ export default function App() {
       const last = copy[copy.length - 1]
       if (!last) return m
       if (last.thinking) {
-        copy[copy.length - 1] = { role: 'jarvis', text: shown, typing: !done }
-      } else if (last.role === 'jarvis') {
+        copy[copy.length - 1] = { role: 'nexus', text: shown, typing: !done }
+      } else if (last.role === 'nexus') {
         copy[copy.length - 1] = { ...last, text: shown, typing: !done }
       } else {
-        copy.push({ role: 'jarvis', text: shown, typing: !done })
+        copy.push({ role: 'nexus', text: shown, typing: !done })
       }
       return copy
     })
@@ -571,19 +572,13 @@ export default function App() {
   async function runVoiceCommand(text) {
     const clean = (text || '').trim()
     if (!clean) return
-    // Agent mid-run: route voice into the live run (merge / queue / interrupt)
-    // instead of starting a separate normal-mode command.
-    if (agentMode && agentRunId) {
-      await sendInstruct(clean, false)
-      return
-    }
-    // Local instant-stop: bare stop-word while JARVIS speaks silences him
+    // Local instant-stop: bare stop-word while NEXUS speaks silences him
     // immediately (frontend + backend voice) with no backend round-trip.
     if ((ttsSpeaking || isSpeaking) && LOCAL_STOP_RE.test(clean.replace(/[.?!]+$/, ''))) {
       try { window.speechSynthesis?.cancel() } catch { }
       setIsSpeaking(false)
       fetch('/api/voice/tts/interrupt', { method: 'POST' }).catch(() => {})
-      setMessages(m => [...m, { role: 'jarvis', text: 'Stopped, sir.' }])
+      setMessages(m => [...m, { role: 'nexus', text: 'Stopped, sir.' }])
       return
     }
     if (!claimSendSlot(clean)) return
@@ -635,7 +630,7 @@ export default function App() {
 
   async function togglePushToTalk() {
     if (isPushToTalkActive) {
-      // stopPushToTalk fires onTranscript (user bubble) + executeCommandRef (JARVIS reply)
+      // stopPushToTalk fires onTranscript (user bubble) + executeCommandRef (NEXUS reply)
       // We just stop it â€” execution is handled inside the hook via executeCommandRef
       await stopPushToTalk();
     } else {
@@ -727,7 +722,7 @@ export default function App() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setMessages(m => [...m, { role: 'jarvis', text: data.detail || 'That did not work, sir. The item is unchanged.' }])
+        setMessages(m => [...m, { role: 'nexus', text: data.detail || 'That did not work, sir. The item is unchanged.' }])
         return null
       }
       if (typeof data.unread_count === 'number') setUnreadCount(data.unread_count)
@@ -735,7 +730,7 @@ export default function App() {
       if (afterOk) await afterOk(data)
       return data
     } catch {
-      setMessages(m => [...m, { role: 'jarvis', text: 'I lost connection to the core service, sir. Nothing was changed.' }])
+      setMessages(m => [...m, { role: 'nexus', text: 'I lost connection to the core service, sir. Nothing was changed.' }])
       return null
     } finally {
       setNotifBusy(false)
@@ -874,6 +869,13 @@ export default function App() {
         setGroqKey(cfg.groq_api_key || '')
         setNvidiaKey(cfg.nvidia_api_key || '')
         if (cfg.nvidia_model) setNvidiaModel(cfg.nvidia_model)
+        // Zetaris
+        if (cfg.zetaris_base_url) setZetarisBaseUrl(cfg.zetaris_base_url)
+        if (cfg.zetaris_username) setZetarisUsername(cfg.zetaris_username)
+        if (cfg.zetaris_org_id) setZetarisOrgId(cfg.zetaris_org_id)
+        if (cfg.zetaris_default_limit) setZetarisDefaultLimit(cfg.zetaris_default_limit)
+        if (cfg.zetaris_max_limit) setZetarisMaxLimit(cfg.zetaris_max_limit)
+        if (cfg.zetaris_timeout_seconds) setZetarisTimeoutSeconds(cfg.zetaris_timeout_seconds)
       }
     }).catch(() => { })
   }, [])
@@ -930,17 +932,17 @@ export default function App() {
       const voice = pickBrowserVoice(resolved)
       if (voice) {
         utter.voice = voice
-        try { console.log('[JARVIS voice]', voice.name, voice.lang) } catch { }
+        try { console.log('[NEXUS voice]', voice.name, voice.lang) } catch { }
         // If the only voice for this language is female, say so plainly
         // (once per session) instead of mysteriously sounding wrong.
         try {
-          if (!window.__jarvisVoiceWarned && ['hi', 'mr', 'ur'].includes(resolved)
+          if (!window.__nexusVoiceWarned && ['hi', 'mr', 'ur'].includes(resolved)
               && voiceGender(voice.name) === 'female') {
-            window.__jarvisVoiceWarned = true;
-            console.warn('[JARVIS voice] No male ' + resolved + ' voice is installed — using '
+            window.__nexusVoiceWarned = true;
+            console.warn('[NEXUS voice] No male ' + resolved + ' voice is installed — using '
               + voice.name + '. For a male Hindi voice, install "Microsoft Madhur": '
               + 'Windows Settings → Time & language → Language → add Hindi, then '
-              + 'Speech → Manage voices → add Hindi. JARVIS will pick it up automatically.');
+              + 'Speech → Manage voices → add Hindi. NEXUS will pick it up automatically.');
           }
         } catch { }
       }
@@ -951,7 +953,7 @@ export default function App() {
     window.speechSynthesis.speak(utter)
   }
 
-  // The single "mute JARVIS" control: stops in-flight frontend speech
+  // The single "mute NEXUS" control: stops in-flight frontend speech
   // immediately and syncs backend speech (reminders/announcements) too.
   const toggleVoiceEnabled = useCallback(async () => {
     const next = !voiceEnabled
@@ -967,10 +969,10 @@ export default function App() {
         body: JSON.stringify({ muted: !next })
       })
       if (!res.ok) {
-        setMessages(m => [...m, { role: 'jarvis', text: 'Frontend voice muted, sir — but I could not reach the backend voice, so PC announcements may still speak.' }])
+        setMessages(m => [...m, { role: 'nexus', text: 'Frontend voice muted, sir — but I could not reach the backend voice, so PC announcements may still speak.' }])
       }
     } catch {
-      setMessages(m => [...m, { role: 'jarvis', text: 'Frontend voice muted, sir — but I could not reach the backend voice, so PC announcements may still speak.' }])
+      setMessages(m => [...m, { role: 'nexus', text: 'Frontend voice muted, sir — but I could not reach the backend voice, so PC announcements may still speak.' }])
     }
   }, [voiceEnabled])
 
@@ -981,13 +983,6 @@ export default function App() {
   async function runCommand(text) {
     const cleanText = (text || '').trim()
     if (!cleanText) return
-    // Handle agent mode toggle
-    if (cleanText.toLowerCase() === 'toggle agent') {
-      setAgentMode(!agentMode)
-      setMessages(m => [...m, { role: 'jarvis', text: "Agent mode " + (agentMode ? 'deactivated' : 'activated') + ", sir." }])
-      setPrompt('')
-      return
-    }
     if (!claimSendSlot(cleanText)) return
     stopTypewriter()
     pushThinking(text, 'reading')
@@ -1010,7 +1005,7 @@ export default function App() {
       const data = await res.json()
       // Full reply received — now genuinely writing it out word by word.
       setThinkingStage('writing')
-      // Voice + typing start together — like Jarvis reads it aloud while writing.
+      // Voice + typing start together — like Nexus reads it aloud while writing.
       speak(data.speak, data.speak_lang || detectLang(data.speak, text))
       await typewriteReply(data.speak)
       setLogs(data.logs || [])
@@ -1087,180 +1082,6 @@ export default function App() {
     }
   }
 
-  async function runAgentMode(text) {
-    const cleanAgent = (text || '').trim()
-    if (!cleanAgent || !claimSendSlot(cleanAgent)) return
-    stopTypewriter()
-    pushThinking(text, 'reading')
-    await paintReadingFrame()
-    setAgentEvents([])
-    setAgentRunId('')
-    setAgentWaitingForHuman(false)
-    setAgentQuestion(null)
-    setQueuedTasks([])
-    setAgentStatus('planning')
-    setThinkingStage('thinking', 'Breaking down your request…')
-
-    try {
-      const res = await fetch('/api/agent/run', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
-      })
-
-      if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({}))
-        await typewriteReply(err.detail || 'The agent failed to start — nothing was changed.')
-        setAgentStatus('error')
-        releaseSendSlot()
-        return
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let finalSpeak = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        // Parse SSE lines
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          const raw = line.slice(6).trim()
-          if (!raw) continue
-          try {
-            const event = JSON.parse(raw)
-            const { type, message, icon } = event
-
-            if (type === 'run_started' && event.data?.run_id) setAgentRunId(event.data.run_id)
-            if (type === 'human_intervention_required' || type === 'waiting_for_user') setAgentWaitingForHuman(true)
-            if (type === 'clarification_required') {
-              const q = event.data?.question || message
-              setAgentWaitingForHuman(true)
-              setAgentQuestion(q)
-              speak(q)
-            }
-
-            // Update agent status + mirror live progress into the chat bubble
-            if (type === 'planning' || type === 'plan_created' || type === 'plan_validated') { setAgentStatus('planning'); setThinkingStage('thinking', message || 'Drafting the plan…') }
-            else if (type === 'step_started' || type === 'tool_started' || type === 'retrying' || type === 'replanning') { setAgentStatus('executing'); setThinkingStage('thinking', message || 'Working through the steps…') }
-            else if (type === 'observing' || type === 'verification_started' || type === 'step_completed') { setAgentStatus('observing'); setThinkingStage('thinking', message || 'Checking that step…') }
-            else if (type === 'human_intervention_required' || type === 'waiting_for_user' || type === 'clarification_required') { setAgentStatus('blocked'); setThinkingStage('thinking', message || 'I need you on this one…') }
-            else if (type === 'step_failed' || type === 'verification_failed' || type === 'task_failed' || type === 'error') { setAgentStatus('error'); setThinkingStage('thinking', message || 'Hit a snag — recovering…') }
-            else if (type === 'task_completed' || type === 'task_partial' || type === 'done') { setAgentStatus('completed'); setThinkingStage('writing', 'Wrapping up your answer…') }
-            else if (type === 'final_verification') { setThinkingStage('thinking', 'Verifying the final result…') }
-
-            // Accumulate event log
-            if (type !== 'done') {
-              const prefix = icon || (type === 'action_done' ? 'âœ“' : type === 'action_error' ? 'âœ—' : 'â†’')
-              setAgentEvents(ev => [
-                ...ev,
-                { text: `${prefix} ${message}`, type }
-              ])
-            }
-
-            // Capture final speak text
-            if (type === 'task_completed' || type === 'task_partial' || type === 'task_failed') {
-              finalSpeak = message
-              setAgentWaitingForHuman(false)
-              setAgentQuestion(null)
-              if (Array.isArray(event.data?.queued)) setQueuedTasks(event.data.queued)
-            }
-            if (type === 'done') setAgentQuestion(null)
-            if (type === 'task_queued' && Array.isArray(event.data?.queue)) setQueuedTasks(event.data.queue)
-            if (type === 'task_queued_summary' && Array.isArray(event.data?.queued)) setQueuedTasks(event.data.queued)
-          } catch { /* ignore parse errors */ }
-        }
-      }
-
-      // Final answer types out word-by-word like live writing.
-      const reply = finalSpeak || 'Done — that task is complete.'
-      setThinkingStage('writing', 'Writing your answer…')
-      speak(reply, detectLang(reply, text))
-      await typewriteReply(reply)
-      refreshFiles()
-
-    } catch (err) {
-      await typewriteReply('Lost the agent connection — is the backend still running?')
-      setAgentStatus('error')
-    } finally {
-      stopTypewriter()
-      releaseSendSlot()
-    }
-  }
-
-  async function sendInstruct(text, withBubble = true) {
-    // New command while a run is active: merge related changes, queue the rest.
-    // Voice callers pass withBubble=false (the transcript bubble already exists).
-    if (withBubble) setMessages(m => [...m, { role: 'user', text }])
-    setPrompt('')
-    try {
-      const res = await fetch('/api/agent/instruct', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ run_id: agentRunId, text })
-      })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setAgentEvents(ev => [...ev, { text: `âœ• Instruction rejected: ${data.detail || 'run finished'}`, type: 'step_failed' }])
-        return
-      }
-      setAgentEvents(ev => [...ev, { text: `â†’ ${data.speak || 'Noted, sir.'}`, type: data.status === 'queued' ? 'task_queued' : 'plan_restarted' }])
-      if (Array.isArray(data.queued)) setQueuedTasks(data.queued)
-      if (data.speak) speak(data.speak, detectLang(data.speak, text))
-    } catch {
-      setAgentEvents(ev => [...ev, { text: 'âœ• Could not reach the agent instruct endpoint.', type: 'step_failed' }])
-    }
-  }
-
-  async function answerAgentQuestion(answer) {
-    try {
-      const res = await fetch('/api/agent/resume', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ run_id: agentRunId, resolution: { answer } })
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setAgentEvents(ev => [...ev, { text: `âœ• Could not send answer: ${err.detail || 'unknown error'}`, type: 'step_failed' }])
-        return
-      }
-      setAgentQuestion(null)
-      setAgentWaitingForHuman(false)
-      setAgentStatus('executing')
-      setAgentEvents(ev => [...ev, { text: 'â–¶ Answer received â€” carrying on.', type: 'resuming' }])
-    } catch {
-      setAgentEvents(ev => [...ev, { text: 'âœ• Could not reach the agent resume endpoint.', type: 'step_failed' }])
-    }
-  }
-
-  async function resumeAgentAfterHuman() {
-    if (!agentRunId || !agentWaitingForHuman) return
-    try {
-      const res = await fetch('/api/agent/resume', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ run_id: agentRunId, resolution: { completed: true } })
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setAgentEvents(ev => [...ev, { text: `âœ• Could not resume: ${err.detail || 'unknown error'}`, type: 'step_failed' }])
-        return
-      }
-      setAgentWaitingForHuman(false)
-      setAgentStatus('executing')
-      setAgentEvents(ev => [...ev, { text: 'â–¶ Human verification acknowledged; resuming agent.', type: 'resuming' }])
-    } catch {
-      setAgentEvents(ev => [...ev, { text: 'âœ• Could not reach the agent resume endpoint.', type: 'step_failed' }])
-    }
-  }
-
   function handleFileSelect(e) {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -1288,11 +1109,11 @@ export default function App() {
         if (res.ok) {
           setPendingDocument({ text: data.text, fileName: file.name, charCount: data.char_count, truncated: data.truncated })
         } else {
-          setMessages(m => [...m, { role: 'jarvis', text: data.detail || "I couldn't read " + file.name + ", sir." }])
+          setMessages(m => [...m, { role: 'nexus', text: data.detail || "I couldn't read " + file.name + ", sir." }])
         }
       })
       .catch(() => {
-        setMessages(m => [...m, { role: 'jarvis', text: 'I lost connection while uploading that file, sir.' }])
+        setMessages(m => [...m, { role: 'nexus', text: 'I lost connection while uploading that file, sir.' }])
       })
       .finally(() => setExtracting(false))
   }
@@ -1302,7 +1123,7 @@ export default function App() {
     const questionText = text.trim() || 'Summarize this document for me and note any key points.'
     stopTypewriter()
     abortSmoothStream()
-    setMessages(m => [...m, { role: 'user', text: questionText, docName: doc.fileName }, { role: 'jarvis', thinking: true, stage: 'reading', detail: textLang(questionText) === 'mr' ? 'तुमचा दस्तऐवज वाचत आहे…' : isHindiText(questionText) ? 'आपका दस्तावेज़ पढ़ रहा हूँ…' : 'Reading your document…', text: '', lang: textLang(questionText) }])
+    setMessages(m => [...m, { role: 'user', text: questionText, docName: doc.fileName }, { role: 'nexus', thinking: true, stage: 'reading', detail: textLang(questionText) === 'mr' ? 'तुमचा दस्तऐवज वाचत आहे…' : isHindiText(questionText) ? 'आपका दस्तावेज़ पढ़ रहा हूँ…' : 'Reading your document…', text: '', lang: textLang(questionText) }])
     setPrompt('')
     setPendingDocument(null)
     setBusy(true)
@@ -1353,7 +1174,7 @@ export default function App() {
     const questionText = text.trim() || 'Describe this image in detail.'
     stopTypewriter()
     abortSmoothStream()
-    setMessages(m => [...m, { role: 'user', text: questionText, image: image.previewUrl }, { role: 'jarvis', thinking: true, stage: 'reading', detail: textLang(questionText) === 'mr' ? 'तुमचं चित्र बघत आहे…' : isHindiText(questionText) ? 'आपकी तस्वीर देख रहा हूँ…' : 'Looking at your image…', text: '', lang: textLang(questionText) }])
+    setMessages(m => [...m, { role: 'user', text: questionText, image: image.previewUrl }, { role: 'nexus', thinking: true, stage: 'reading', detail: textLang(questionText) === 'mr' ? 'तुमचं चित्र बघत आहे…' : isHindiText(questionText) ? 'आपकी तस्वीर देख रहा हूँ…' : 'Looking at your image…', text: '', lang: textLang(questionText) }])
     setPrompt('')
     setPendingImage(null)
     setBusy(true)
@@ -1400,20 +1221,6 @@ export default function App() {
   }
 
   function handleSend() {
-    // Answering a live agent question: reply into the paused run, no new task.
-    if (agentWaitingForHuman && agentQuestion && agentRunId) {
-      const answer = prompt.trim()
-      if (!answer) return
-      setMessages(m => [...m, { role: 'user', text: answer }])
-      setPrompt('')
-      answerAgentQuestion(answer)
-      return
-    }
-    // Agent is mid-run: new commands merge into the plan or queue up.
-    if (busy && agentRunId && agentMode && prompt.trim()) {
-      sendInstruct(prompt.trim())
-      return
-    }
     if (pendingImage) { runImageAnalysis(prompt, pendingImage); return }
     if (pendingDocument) { runDocumentAnalysis(prompt, pendingDocument); return }
     if (clarificationPending) {
@@ -1421,12 +1228,10 @@ export default function App() {
       const orig = clarificationPending.originalPrompt || ''
       setClarificationPending(null)
       const fullPrompt = orig ? `${orig} via ${option}` : option
-      if (agentMode) runAgentMode(fullPrompt)
-      else if (chatMode) runStreamingChat(fullPrompt)
+      if (chatMode) runStreamingChat(fullPrompt)
       else runCommand(fullPrompt)
       return
     }
-    if (agentMode) { runAgentMode(prompt); return }
     if (chatMode) runStreamingChat(prompt)
     else runCommand(prompt)
   }
@@ -1443,8 +1248,7 @@ export default function App() {
         fullPrompt = `${orig} (${option})`
       }
     }
-    if (agentMode) runAgentMode(fullPrompt)
-    else if (chatMode) runStreamingChat(fullPrompt)
+    if (chatMode) runStreamingChat(fullPrompt)
     else runCommand(fullPrompt)
   }
 
@@ -1459,7 +1263,14 @@ export default function App() {
           gemini_project_id: geminiProjectId,
           groq_api_key: groqKey,
           nvidia_api_key: nvidiaKey,
-          nvidia_model: nvidiaModel
+          nvidia_model: nvidiaModel,
+          zetaris_base_url: zetarisBaseUrl,
+          zetaris_username: zetarisUsername,
+          zetaris_password: zetarisPassword,
+          zetaris_org_id: zetarisOrgId,
+          zetaris_default_limit: zetarisDefaultLimit,
+          zetaris_max_limit: zetarisMaxLimit,
+          zetaris_timeout_seconds: zetarisTimeoutSeconds
         })
       })
       if (res.ok) {
@@ -1570,13 +1381,12 @@ export default function App() {
     { label: 'Restart', icon: RefreshCw, cmd: 'restart the pc' },
     { label: 'Shutdown', icon: Power, cmd: 'shutdown' },
     { label: 'Clear Chat', icon: RotateCcw, cmd: 'clear chat' },
-    { label: 'Agent Mode', icon: Brain, cmd: 'toggle agent' },
   ]
 
   const sphereState = ttsSpeaking ? 'speaking' : (busy || isProcessing) ? 'processing' : (voiceActive || isPushToTalkActive) ? 'listening' : isWakeDetected ? 'wake' : 'idle'
 
   return (
-    <div className={`jarvis-root ${booting ? 'is-booting' : 'is-ready'}`}>
+    <div className={`nexus-root ${booting ? 'is-booting' : 'is-ready'}`}>
       <StartupController
         onStartupComplete={handleStartupComplete}
         onBriefingReady={handleBriefingReady}
@@ -1631,7 +1441,7 @@ export default function App() {
       )}
 
       {/* â”€â”€ Core view (hidden when phone/files active) â”€â”€ */}
-      <div className={agentMode ? 'agent-mode' : ''} style={{ display: activeView === 'core' ? 'contents' : 'none' }}>
+      <div style={{ display: activeView === 'core' ? 'contents' : 'none' }}>
 
 
       {/* TOP BAR */}
@@ -1649,16 +1459,13 @@ export default function App() {
           voiceEnabled={voiceEnabled}
           setVoiceEnabled={setVoiceEnabled}
           onToggleVoiceEnabled={toggleVoiceEnabled}
-          agentMode={agentMode}
-          setAgentMode={setAgentMode}
-          agentStatus={agentStatus}
           unreadCount={unreadCount}
           onOpenNotifications={openNotifications}
         />
       </div>
 
       {/* MAIN 3-COLUMN GRID */}
-      <nav className={`module-rail ${assembling ? 'assemble-rail' : ''}`} aria-label="JARVIS modules">
+      <nav className={`module-rail ${assembling ? 'assemble-rail' : ''}`} aria-label="NEXUS modules">
         <button className={activeView === 'core' ? 'rail-btn active' : 'rail-btn'} onClick={() => setActiveView('core')}><Activity size={16} /><span>CORE</span></button>
         <button className={activeView === 'code' ? 'rail-btn active' : 'rail-btn'} onClick={() => setActiveView('code')}><Terminal size={16} /><span>CODE CORE</span></button>
         <button className={activeView === 'files' ? 'rail-btn active' : 'rail-btn'} onClick={() => setActiveView('files')}><Folder size={16} /><span>FILES</span></button>
@@ -1676,11 +1483,11 @@ export default function App() {
               {messages.map((m, i) => (
                 <div
                   key={i}
-                  className={`bubble ${m.role === 'user' ? 'user' : 'jarvis'}${m.thinking ? ' thinking' : ''}${m.typing ? ' typing' : ''}`}
+                  className={`bubble ${m.role === 'user' ? 'user' : 'nexus'}${m.thinking ? ' thinking' : ''}${m.typing ? ' typing' : ''}`}
                   onClick={() => { if (m.typing) completeTypingNow() }}
                   title={m.typing ? 'Click to show full reply' : undefined}
                 >
-                  <span className="who">{m.role === 'user' ? 'You' : 'Jarvis'}</span>
+                  <span className="who">{m.role === 'user' ? 'You' : 'Nexus'}</span>
                   {m.image && <img className="bubble-image" src={m.image} alt="attachment" />}
                   {m.docName && (
                     <span className="bubble-doc-tag"><FileIcon size={12} /> {m.docName}</span>
@@ -1696,7 +1503,39 @@ export default function App() {
                       {m.text ? <span className="thinking-partial">{m.text}</span> : null}
                     </span>
                   ) : (
-                    <span className="reply-text">{m.text}{m.typing ? <span className="typing-caret" aria-hidden="true" /> : null}</span>
+                    <>
+                      <span className="reply-text">{m.text}{m.typing ? <span className="typing-caret" aria-hidden="true" /> : null}</span>
+                      {m.file_data && m.file_data.rows && m.file_data.rows.length > 0 && (
+                        <div className="query-result-table">
+                          <div className="table-header">
+                            <span>{m.file_data.row_count} row(s)</span>
+                            {m.file_data.query_token && <span className="query-token">Query: {m.file_data.query_token.slice(0, 8)}...</span>}
+                          </div>
+                          <div className="table-container">
+                            <table>
+                              <thead>
+                                <tr>
+                                  {m.file_data.columns && m.file_data.columns.length > 0
+                                    ? m.file_data.columns.map((col, idx) => <th key={idx}>{col}</th>)
+                                    : m.file_data.rows[0].map((_, idx) => <th key={idx}>Column {idx + 1}</th>)
+                                  }
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {m.file_data.rows.slice(0, 50).map((row, rowIdx) => (
+                                  <tr key={rowIdx}>
+                                    {row.map((cell, colIdx) => <td key={colIdx}>{cell ?? ''}</td>)}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          {m.file_data.rows.length > 50 && (
+                            <div className="table-truncated">Showing first 50 of {m.file_data.rows.length} rows</div>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
@@ -1771,10 +1610,10 @@ export default function App() {
                 value={prompt}
                 onChange={e => setPrompt(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleSend()}
-                placeholder={agentQuestion ? `Answer: "${agentQuestion}"` : (busy && agentRunId) ? 'JARVIS is working â€” instruct or queueâ€¦' : clarificationPending ? `Answer: "${clarificationPending.question}"` : chatMode ? 'Chat with Jarvisâ€¦' : 'Give a commandâ€¦'}
-                disabled={busy && !agentRunId && !(agentWaitingForHuman && agentQuestion)}
+                placeholder={clarificationPending ? `Answer: "${clarificationPending.question}"` : chatMode ? 'Chat with Nexusâ€¦' : 'Give a commandâ€¦'}
+                disabled={busy}
               />
-              <button className="send-btn" onClick={handleSend} disabled={(busy && !agentRunId && !(agentWaitingForHuman && agentQuestion)) || (!prompt.trim() && !pendingImage && !pendingDocument && !clarificationPending)}>
+              <button className="send-btn" onClick={handleSend} disabled={busy || (!prompt.trim() && !pendingImage && !pendingDocument && !clarificationPending)}>
                 {busy ? 'â€¦' : 'SEND'}
               </button>
             </div>
@@ -1824,35 +1663,11 @@ export default function App() {
             <div className="core-display-container">
               <CoreSphere
                 state={sphereState}
-                agentMode={agentMode}
               />
             </div>
           </div>
 
-          {/* Show agent events in Agent Mode, otherwise show normal logs */}
-          {agentMode && agentEvents.length > 0 && (
-            <div className={`panel log-ticker ${assembling ? 'assemble-ticker' : ''}`}>
-              {agentWaitingForHuman && (
-                <div className="line exec">
-                  Human verification is required in the browser or app. Complete it, then{' '}
-                  <button className="btn-secondary" onClick={resumeAgentAfterHuman}>RESUME AGENT</button>
-                </div>
-              )}
-              {queuedTasks.length > 0 && (
-                <div className="line exec">
-                  â³ Queued ({queuedTasks.length}): {queuedTasks[0].slice(0, 70)}{' '}
-                  <button className="btn-secondary" onClick={() => { const [next, ...rest] = queuedTasks; setQueuedTasks(rest); runAgentMode(next) }}>RUN NEXT</button>{' '}
-                  <button className="btn-secondary" onClick={() => setQueuedTasks([])}>CLEAR</button>
-                </div>
-              )}
-              {[...agentEvents].reverse().map((ev, i) => (
-                <div key={i} className={`line ${ev.type === 'step_completed' ? 'result' : ev.type === 'step_failed' ? 'exec' : ev.type === 'planning' ? 'exec' : ''}`}>
-                  {ev.text}
-                </div>
-              ))}
-            </div>
-          )}
-          {!agentMode && logs.length > 0 && (
+          {logs.length > 0 && (
             <div className={`panel log-ticker ${assembling ? 'assemble-ticker' : ''}`}>
               {[...logs].reverse().map((l, i) => (
                 <div key={i} className={`line ${l.startsWith('ACTION') ? 'exec' : l.startsWith('RESULT') ? 'result' : ''}`}>
@@ -1880,7 +1695,7 @@ export default function App() {
             />
           )}
           <div className={assembling ? 'assemble-directives' : ''}>
-            <CommandGrid quickActions={quickActions} runCommand={runCommand} busy={busy} agentMode={agentMode} />
+            <CommandGrid quickActions={quickActions} runCommand={runCommand} busy={busy} />
           </div>
           <div className={assembling ? 'assemble-phone' : ''}>
             <PhonePanel />
@@ -1889,7 +1704,7 @@ export default function App() {
       </div>
       </div>{/* end core-view wrapper */}
 
-      {/* Notification Center overlay (JARVIS-native panel, Esc to close) */}
+      {/* Notification Center overlay (NEXUS-native panel, Esc to close) */}
       {centerOpen && (
         <NotificationCenter
           data={centerData}
@@ -1931,7 +1746,7 @@ export default function App() {
                 }
               </div>
               {oauthMsg && <div className="save-note" style={{ color: 'var(--cyan)' }}>{oauthMsg}</div>}
-              <p className="oauth-hint">Linking lets Jarvis use your Google account for Gemini without an API key.</p>
+              <p className="oauth-hint">Linking lets Nexus use your Google account for Gemini without an API key.</p>
             </div>
 
             {/* Gmail watcher (proactive important-mail announcements) */}
@@ -1948,7 +1763,7 @@ export default function App() {
                 }
               </div>
               {gmailMsg && <div className="save-note" style={{ color: 'var(--cyan)' }}>{gmailMsg}</div>}
-              <p className="oauth-hint">Read + send. Jarvis checks on restart + every 30 min and speaks + toasts VIP/urgent mail. VIP senders list: backend/data/gmail_watch.json</p>
+              <p className="oauth-hint">Read + send. Nexus checks on restart + every 30 min and speaks + toasts VIP/urgent mail. VIP senders list: backend/data/gmail_watch.json</p>
             </div>
 
             <div className="field">
@@ -1988,7 +1803,7 @@ export default function App() {
               <p className="oauth-hint">Get free key at console.groq.com â€” used as cloud fallback for voice transcription.</p>
             </div>
             <div className="field">
-              <label>NVIDIA NIM API Key (Autonomous Code Core)</label>
+              <label>NVIDIA NIM API Key (Code Core)</label>
               <input
                 type="password"
                 value={nvidiaKey}
@@ -2005,6 +1820,78 @@ export default function App() {
                 placeholder="meta/llama-3.3-70b-instruct"
               />
               <p className="oauth-hint">Examples: meta/llama-3.3-70b-instruct, deepseek-ai/deepseek-r1, qwen/qwen2.5-coder-32b-instruct</p>
+            </div>
+
+            {/* Zetaris AI Data Gateway */}
+            <div className="field">
+              <label>Zetaris AI Data Gateway</label>
+              <p className="oauth-hint">Read-only SQL query connector. Uses the Zetaris UI proxy at the base URL below.</p>
+            </div>
+            <div className="field">
+              <label>Zetaris Base URL (UI Origin)</label>
+              <input
+                value={zetarisBaseUrl}
+                onChange={e => setZetarisBaseUrl(e.target.value)}
+                placeholder="http://localhost:3000"
+              />
+            </div>
+            <div className="field">
+              <label>Zetaris Username (Email)</label>
+              <input
+                value={zetarisUsername}
+                onChange={e => setZetarisUsername(e.target.value)}
+                placeholder="admin@zetaris.com"
+              />
+            </div>
+            <div className="field">
+              <label>Zetaris Password</label>
+              <input
+                type="password"
+                value={zetarisPassword}
+                onChange={e => setZetarisPassword(e.target.value)}
+                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+              />
+            </div>
+            <div className="field">
+              <label>Zetaris Org ID</label>
+              <input
+                value={zetarisOrgId}
+                onChange={e => setZetarisOrgId(e.target.value)}
+                placeholder="1"
+              />
+              <p className="oauth-hint">Numeric organization ID from Management â†’ Organisation in the Zetaris UI.</p>
+            </div>
+            <div className="field">
+              <label>Zetaris Default Row Limit</label>
+              <input
+                type="number"
+                value={zetarisDefaultLimit}
+                onChange={e => setZetarisDefaultLimit(Math.max(1, Math.min(100, parseInt(e.target.value) || 50)))}
+                min="1"
+                max="100"
+              />
+              <p className="oauth-hint">Default rows per query (1â€“100). Can be overridden per query.</p>
+            </div>
+            <div className="field">
+              <label>Zetaris Max Row Limit</label>
+              <input
+                type="number"
+                value={zetarisMaxLimit}
+                onChange={e => setZetarisMaxLimit(Math.max(1, Math.min(100, parseInt(e.target.value) || 100)))}
+                min="1"
+                max="100"
+              />
+              <p className="oauth-hint">Hard cap on rows returned per query (1â€“100).</p>
+            </div>
+            <div className="field">
+              <label>Zetaris Timeout (seconds)</label>
+              <input
+                type="number"
+                value={zetarisTimeoutSeconds}
+                onChange={e => setZetarisTimeoutSeconds(Math.max(5, parseInt(e.target.value) || 30))}
+                min="5"
+              />
+              <p className="oauth-hint">Request timeout for Zetaris API calls.</p>
             </div>
             <div className="modal-actions">
               <button className="btn-secondary" onClick={() => setSettingsOpen(false)}>Cancel</button>

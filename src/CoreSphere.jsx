@@ -1,7 +1,6 @@
 import React, { useEffect, useRef } from 'react'
 
 const COLORS = { idle: '#43d9ff', listening: '#54a8ff', wake: '#72f0b0', processing: '#ffb45c', speaking: '#72f0b0' }
-const AGENT_COLORS = { idle: '#ffe04f', listening: '#fff06a', wake: '#fff7a8', processing: '#ffd32f', speaking: '#fff06a' }
 const TAU = Math.PI * 2
 
 function seeded(i) {
@@ -9,7 +8,7 @@ function seeded(i) {
   return x - Math.floor(x)
 }
 
-export default function CoreSphere({ state = 'idle', agentMode = false, startupPhase = null }) {
+export default function CoreSphere({ state = 'idle', startupPhase = null }) {
   const canvasRef = useRef(null)
   const rotationOffsetRef = useRef({ yaw: 0, pitch: 0 })
   const zoomRef = useRef(1.0)
@@ -68,10 +67,10 @@ export default function CoreSphere({ state = 'idle', agentMode = false, startupP
       }
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, w, h)
-      const input = Math.min(1, Math.max(0, Number(window.jarvisAudioLevel) || 0))
+      const input = Math.min(1, Math.max(0, Number(window.nexusAudioLevel ?? window.jarvisAudioLevel) || 0))
       const fallback = .08 + (Math.sin(t * 3.2) * .5 + .5) * .04
       smoothed += ((input > .015 ? input : fallback) - smoothed) * .14
-      const color = (agentMode ? AGENT_COLORS : COLORS)[state] || (agentMode ? AGENT_COLORS : COLORS).idle
+      const color = COLORS[state] || COLORS.idle
 
       // Time elapsed since mount (seconds)
       const elapsedSec = (Date.now() - startupStartTimeRef.current) / 1000
@@ -174,9 +173,9 @@ export default function CoreSphere({ state = 'idle', agentMode = false, startupP
     }
     render()
     return () => cancelAnimationFrame(raf)
-  }, [state, agentMode, startupPhase])
+  }, [state, startupPhase])
 
-  const color = (agentMode ? AGENT_COLORS : COLORS)[state] || (agentMode ? AGENT_COLORS : COLORS).idle
+  const color = COLORS[state] || COLORS.idle
   
   const handlePointerDown = (event) => {
     draggingRef.current = true
@@ -216,7 +215,7 @@ export default function CoreSphere({ state = 'idle', agentMode = false, startupP
       <canvas
         ref={canvasRef}
         className="core-canvas"
-        aria-label="Audio reactive JARVIS 3D core"
+        aria-label="Audio reactive NEXUS 3D core"
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}

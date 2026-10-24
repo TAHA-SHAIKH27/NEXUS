@@ -54,7 +54,7 @@ input:focus-visible {
    outline-offset: 2px
 }
 
-.jarvis-root {
+.nexus-root {
    height: 100vh;
    display: flex;
    flex-direction: column;
@@ -62,7 +62,7 @@ input:focus-visible {
    background: radial-gradient(ellipse 60% 55% at 50% 45%, rgba(18, 80, 112, .13), transparent 70%), var(--void)
 }
 
-.jarvis-root:before {
+.nexus-root:before {
    content: '';
    position: absolute;
    inset: 0;
@@ -261,7 +261,7 @@ input:focus-visible {
    border: 1px solid rgba(67, 217, 255, .3)
 }
 
-.bubble.jarvis {
+.bubble.nexus {
    border: 1px solid rgba(140, 167, 184, .13);
    color: var(--text-dim)
 }
@@ -749,10 +749,9 @@ input:focus-visible {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    CHATGPT-STYLE THINKING BUBBLE (in-transcript progress)
    Reading prompt â†’ Thinking â†’ Writing answer, with a live
-   spinner + bouncing dots + shimmer. Agent mode reuses the
-   same bubble and streams the current step into .thinking-detail.
+   spinner + bouncing dots + shimmer. Streams the current step into .thinking-detail.
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-.bubble.jarvis.thinking {
+.bubble.nexus.thinking {
    border-style: dashed;
    border-color: rgba(67, 217, 255, .35);
    background:
@@ -760,13 +759,6 @@ input:focus-visible {
       rgba(67, 217, 255, .03);
    background-size: 200% 100%;
    animation: thinking-shimmer 1.6s linear infinite;
-}
-.agent-mode .bubble.jarvis.thinking {
-   border-color: rgba(255, 216, 74, .45);
-   background:
-      linear-gradient(100deg, transparent 30%, rgba(255, 216, 74, .09) 50%, transparent 70%),
-      rgba(255, 216, 74, .04);
-   background-size: 200% 100%;
 }
 @keyframes thinking-shimmer {
    from { background-position: 200% 0; }
@@ -832,7 +824,7 @@ input:focus-visible {
    white-space: pre-wrap;
    overflow-wrap: anywhere;
 }
-.bubble.jarvis.typing {
+.bubble.nexus.typing {
    border-color: rgba(67, 217, 255, .4);
    cursor: pointer;
 }
@@ -850,14 +842,14 @@ input:focus-visible {
    50% { opacity: 0; }
 }
 @media(prefers-reduced-motion:reduce) {
-   .bubble.jarvis.thinking { animation: none; }
+   .bubble.nexus.thinking { animation: none; }
    .thinking-spinner, .thinking-dots span { animation-duration: .001ms !important; }
    .typing-caret { animation: none; }
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    NOTIFICATION CENTER // REMINDER BAR // BADGE
-   Glass/cinematic language matched to the JARVIS HUD.
+   Glass/cinematic language matched to the NEXUS HUD.
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 
 /* â”€â”€ Header notification button + unread badge â”€â”€ */
@@ -1140,131 +1132,6 @@ input:focus-visible {
    }
 }
 
-.agent-mode {
-   --cyan: #ffd84a;
-   --cyan-dim: #8a6f1f;
-   --line: #4d431c;
-   --panel: #0f120d;
-   --panel-raised: #19170c;
-   --text: #fff7c7;
-   --text-dim: #d8c36d;
-   --text-faint: #8f813f;
-   --green: #ffe66d;
-   --red: #fff06a
-}
-
-.agent-mode .jarvis-root {
-   background: radial-gradient(ellipse 60% 55% at 50% 45%, rgba(120, 108, 12, .2), transparent 70%), var(--void)
-}
-
-.agent-mode .topbar-header {
-   border-bottom-color: rgba(255, 138, 61, .32);
-   box-shadow: 0 0 24px rgba(255, 73, 35, .08)
-}
-
-.agent-mode .wordmark {
-   color: #fff7c7;
-   text-shadow: 0 0 18px rgba(255, 216, 74, .6)
-}
-
-.agent-mode .wordmark:before {
-   color: #ffe35a
-}
-
-.agent-mode .status-pill {
-   color: #ffe98a;
-   border-color: #71321f;
-   background: rgba(255, 76, 42, .09)
-}
-
-.agent-mode .status-dot,
-.agent-mode .status-dot.agent {
-   background: #ffe052;
-   box-shadow: 0 0 12px #ffe052
-}
-
-.agent-mode .panel,
-.agent-mode .phone-mirror-panel {
-   border-color: rgba(255, 111, 54, .24);
-   box-shadow: 0 12px 32px rgba(0, 0, 0, .3), inset 0 1px rgba(255, 201, 134, .055)
-}
-
-.agent-mode .panel:hover {
-   border-color: rgba(255, 131, 67, .55)
-}
-
-.agent-mode .action-btn {
-   background: rgba(255, 80, 35, .06);
-   border-color: rgba(255, 109, 53, .26);
-   color: #dca17e
-}
-
-.agent-mode .action-btn:hover,
-.agent-mode .agent-action.active {
-   color: #fff9c9;
-   border-color: #ffe04f;
-   background: rgba(255, 211, 55, .22);
-   box-shadow: 0 0 16px rgba(255, 79, 40, .2)
-}
-
-.agent-mode .agent-action {
-   color: #ffea72;
-   border-color: rgba(255, 91, 48, .55);
-   animation: agent-pulse 1.25s ease-in-out infinite
-}
-
-.agent-mode .agent-badge {
-   color: #ffdf4f;
-   border: 1px solid rgba(255, 91, 48, .55);
-   padding: 2px 5px;
-   font-size: 8px;
-   letter-spacing: .12em
-}
-
-.agent-mode .log-ticker .line.exec {
-   color: #ffe36a
-}
-
-.agent-mode .log-ticker .line.result {
-   color: #ffe66d
-}
-
-.agent-mode .core-canvas {
-   filter: drop-shadow(0 0 18px #ffdf3f) saturate(1.3)
-}
-
-.agent-mode .core-processing .core-canvas,
-.agent-mode .core-listening .core-canvas {
-   animation: agent-core-surge .8s ease-in-out infinite alternate
-}
-
-.agent-status-bar {
-   position: absolute;
-   bottom: 4px;
-   left: 50%;
-   transform: translateX(-50%);
-   z-index: 6;
-   color: #ff8b50;
-   font: 9px var(--font-mono);
-   letter-spacing: .16em;
-   text-transform: uppercase;
-   pointer-events: none;
-   text-shadow: 0 0 12px rgba(255, 216, 74, .65)
-}
-
-@keyframes agent-pulse {
-   50% {
-      box-shadow: 0 0 20px rgba(255, 216, 74, .4);
-      transform: translateY(-1px)
-   }
-}
-
-@keyframes agent-core-surge {
-   to {
-      filter: drop-shadow(0 0 34px #ffd92f) saturate(1.7)
-   }
-}
-
 @keyframes assemble-top {
    from {
       opacity: 0;
@@ -1367,53 +1234,6 @@ input:focus-visible {
       animation-duration: .001ms !important;
       transition-duration: .001ms !important
    }
-}
-
-.agent-mode .jarvis-root:before {
-   background-image: linear-gradient(rgba(241, 194, 23, 0.61) 1px, transparent 1px), linear-gradient(90deg, rgba(255, 216, 74, .025) 1px, transparent 1px)
-}
-
-.agent-mode .topbar-header {
-   border-bottom-color: rgba(255, 216, 74, .28)
-}
-
-.agent-mode .module-rail .rail-btn.active,
-.agent-mode .module-rail .rail-btn:hover {
-   color: #ffe04f;
-   border-color: #ffe04f;
-   background: rgba(255, 216, 74, .1);
-   box-shadow: 0 0 18px rgba(255, 216, 74, .2)
-}
-
-.agent-mode .gauge-ring .fill {
-   stroke: #ffe04f
-}
-
-.agent-mode .action-btn:hover,
-.agent-mode .icon-btn:hover,
-.agent-mode .note-add-btn,
-.agent-mode .todo-add-btn {
-   color: #ffe04f;
-   border-color: #ffe04f
-}
-
-.agent-mode .send-btn {
-   background: #ffe04f;
-   color: #171406
-}
-
-.agent-mode .bubble.user {
-   background: rgba(255, 216, 74, .1);
-   border-color: rgba(255, 216, 74, .36)
-}
-
-.agent-mode .bubble .who,
-.agent-mode .log-ticker .line.exec {
-   color: #ffe04f
-}
-
-.agent-mode .core-canvas {
-   filter: drop-shadow(0 0 20px #ffe04f) saturate(1.15)
 }
 
 .codecore-container {
@@ -2756,4 +2576,73 @@ input:focus-visible {
    to {
       transform: rotate(360deg)
    }
-}
+}/ *   â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "   
+       Q U E R Y   R E S U L T   T A B L E   ( Z e t a r i s )  
+       â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "  â "    * /  
+ . q u e r y - r e s u l t - t a b l e   {  
+         m a r g i n - t o p :   8 p x ;  
+         b o r d e r :   1 p x   s o l i d   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 1 5 ) ;  
+         b o r d e r - r a d i u s :   2 p x ;  
+         b a c k g r o u n d :   r g b a ( 0 ,   0 ,   0 ,   . 2 ) ;  
+         o v e r f l o w :   h i d d e n ;  
+         m a x - w i d t h :   1 0 0 % ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   . t a b l e - h e a d e r   {  
+         d i s p l a y :   f l e x ;  
+         j u s t i f y - c o n t e n t :   s p a c e - b e t w e e n ;  
+         a l i g n - i t e m s :   c e n t e r ;  
+         p a d d i n g :   6 p x   1 0 p x ;  
+         f o n t :   9 p x   v a r ( - - f o n t - m o n o ) ;  
+         c o l o r :   v a r ( - - c y a n ) ;  
+         l e t t e r - s p a c i n g :   . 1 e m ;  
+         t e x t - t r a n s f o r m :   u p p e r c a s e ;  
+         b o r d e r - b o t t o m :   1 p x   s o l i d   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 1 ) ;  
+         b a c k g r o u n d :   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 0 3 ) ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   . q u e r y - t o k e n   {  
+         c o l o r :   v a r ( - - t e x t - f a i n t ) ;  
+         f o n t - s i z e :   8 p x ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   . t a b l e - c o n t a i n e r   {  
+         o v e r f l o w :   a u t o ;  
+         m a x - h e i g h t :   3 0 0 p x ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   t a b l e   {  
+         w i d t h :   1 0 0 % ;  
+         b o r d e r - c o l l a p s e :   c o l l a p s e ;  
+         f o n t :   1 1 p x   v a r ( - - f o n t - m o n o ) ;  
+         c o l o r :   v a r ( - - t e x t ) ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   t h ,  
+ . q u e r y - r e s u l t - t a b l e   t d   {  
+         p a d d i n g :   6 p x   8 p x ;  
+         b o r d e r - b o t t o m :   1 p x   s o l i d   r g b a ( 2 5 ,   5 1 ,   7 2 ,   . 7 ) ;  
+         t e x t - a l i g n :   l e f t ;  
+         w h i t e - s p a c e :   n o w r a p ;  
+         o v e r f l o w :   h i d d e n ;  
+         t e x t - o v e r f l o w :   e l l i p s i s ;  
+         m a x - w i d t h :   2 0 0 p x ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   t h   {  
+         c o l o r :   v a r ( - - c y a n ) ;  
+         f o n t - w e i g h t :   6 0 0 ;  
+         b a c k g r o u n d :   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 0 5 ) ;  
+         b o r d e r - b o t t o m :   1 p x   s o l i d   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 2 ) ;  
+         p o s i t i o n :   s t i c k y ;  
+         t o p :   0 ;  
+         z - i n d e x :   1 ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   t d   {  
+         c o l o r :   v a r ( - - t e x t - d i m ) ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   t r : h o v e r   t d   {  
+         b a c k g r o u n d :   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 0 4 ) ;  
+ }  
+ . q u e r y - r e s u l t - t a b l e   . t a b l e - t r u n c a t e d   {  
+         p a d d i n g :   6 p x   1 0 p x ;  
+         f o n t :   9 p x   v a r ( - - f o n t - m o n o ) ;  
+         c o l o r :   v a r ( - - t e x t - f a i n t ) ;  
+         t e x t - a l i g n :   r i g h t ;  
+         b o r d e r - t o p :   1 p x   s o l i d   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 1 ) ;  
+ }  
+ 

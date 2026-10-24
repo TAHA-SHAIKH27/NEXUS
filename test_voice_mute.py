@@ -1,4 +1,4 @@
-"""Tests for the JARVIS mute control (frontend + backend voice).
+"""Tests for the NEXUS mute control (frontend + backend voice).
 
 Backend speech (reminders/announcements via SAPI) must stop when muted;
 unmuting must not replay stale announcements. No SAPI needed: VoiceSystem

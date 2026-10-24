@@ -2,8 +2,7 @@
 document_intel.py
 ------------------
 Plain-text extraction for uploaded documents, used by the document Q&A /
-summarization pipeline (main.py's /api/document/extract + agent.py's
-stream_document_analysis()). Supports PDF, PPTX, DOCX, TXT, and MD.
+summarization pipeline (main.py's /api/document/extract). Supports PDF, PPTX, DOCX, TXT, and MD.
 """
 
 import os

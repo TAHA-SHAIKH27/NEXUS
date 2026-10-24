@@ -1,4 +1,4 @@
-"""charts.py -- Human-looking chart rendering for J.A.R.V.I.S. documents.
+"""charts.py -- Human-looking chart rendering for N.E.X.U.S. documents.
 
 Renders pie / bar / histogram / line charts to PNG bytes so they can be
 embedded directly into Word (.docx) and PowerPoint (.pptx) documents, giving

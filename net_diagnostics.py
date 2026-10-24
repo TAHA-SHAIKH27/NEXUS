@@ -1,5 +1,5 @@
 """
-J.A.R.V.I.S. network diagnostics — single source of truth for connectivity state.
+N.E.X.U.S. network diagnostics — single source of truth for connectivity state.
 
 Distinguishes the cases users actually hit, instead of one generic
 "network issue communicating with my neural processors":
@@ -22,7 +22,7 @@ Distinguishes the cases users actually hit, instead of one generic
 
 No third-party deps: stdlib + psutil (already a project dependency).
 All probes use short timeouts and results are cached ~10s so error-path
-diagnostics never stall Jarvis for long.
+diagnostics never stall Nexus for long.
 """
 import re
 import socket
@@ -248,10 +248,10 @@ STATE_LABELS = {
 }
 
 
-def build_jarvis_message(snapshot: dict | None = None,
+def build_nexus_message(snapshot: dict | None = None,
                          exc: BaseException | None = None,
                          mode: str = "chat") -> str:
-    """Jarvis-persona speak text for the current connectivity reality.
+    """Nexus-persona speak text for the current connectivity reality.
 
     mode: "chat" (free conversation, no offline fallback),
           "command" (we will ALSO run the local offline parser),

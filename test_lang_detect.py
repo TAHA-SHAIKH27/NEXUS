@@ -1,6 +1,6 @@
 """Tests for reply-language detection + TTS voice selection.
 
-JARVIS must speak Hindi/Urdu/Marathi/French/Spanish replies with a matching
+NEXUS must speak Hindi/Urdu/Marathi/French/Spanish replies with a matching
 voice instead of reading everything with the English voice.
 """
 from backend.agent.lang_detect import (

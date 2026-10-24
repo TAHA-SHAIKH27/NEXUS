@@ -89,7 +89,7 @@ class Browser:
         self.playwright = await async_playwright().start()
 
         # Use persistent context with user data dir — reuses Chrome profile (cookies, logins)
-        user_data_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "JARVIS", "browser_profile")
+        user_data_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "NEXUS", "browser_profile")
         os.makedirs(user_data_dir, exist_ok=True)
 
         # Try to use system Chrome (has your logins) instead of Playwright's bundled Chromium
@@ -109,7 +109,7 @@ class Browser:
             # The user's persistent profile can be locked by another Chromium
             # process. Do not retry it: use an isolated profile so the task can
             # continue without corrupting or depending on that profile.
-            self._temporary_profile = tempfile.mkdtemp(prefix="jarvis-browser-")
+            self._temporary_profile = tempfile.mkdtemp(prefix="nexus-browser-")
             self.context = await self.playwright.chromium.launch_persistent_context(
                 user_data_dir=self._temporary_profile,
                 headless=False,
@@ -181,7 +181,7 @@ class Browser:
     async def detect_page_state(self) -> PageStateResult:
         """
         Inspect the current page and classify its state.
-        Returns structured state for the agent to act upon.
+        Returns structured state for direct handling.
         """
         if not self.page:
             return PageStateResult(
@@ -1333,7 +1333,7 @@ class Browser:
         """Fill ONLY the username/email field of a login form.
 
         Passwords are never accepted here by design — the human completes the
-        password/2FA/CAPTCHA step in the visible browser while the agent waits
+        password/2FA/CAPTCHA step in the visible browser directly
         (human-in-the-loop). Returns success when the value was retained."""
         await self._ensure_page()
         try:
@@ -1356,7 +1356,7 @@ class Browser:
         """Heuristic login check: logout/account markers or post-login URL.
 
         Returns `logged_in: True/False` plus the evidence found. Conservative:
-        unknown pages report False so the agent asks the human instead of
+        unknown pages report False so direct handling asks the human instead of
         claiming a login it cannot prove."""
         await self._ensure_page()
         try:

@@ -165,7 +165,7 @@ export default function PhoneMirrorPage({
       {/* ── Top bar ── */}
       <div className="fp-topbar">
         <button className="fp-back-btn" onClick={() => setActiveView('core')}>
-          <ArrowLeft size={14} /> BACK TO JARVIS
+          <ArrowLeft size={14} /> BACK TO NEXUS
         </button>
         <div className="fp-title">
           <SmartphoneNfc size={16} style={{ color: 'var(--cyan)' }} />
@@ -196,8 +196,8 @@ export default function PhoneMirrorPage({
             <p className="panel-label"><span>Assistant</span><span>{messages.length} entries</span></p>
             <div className="chat-log" style={{ flex: 1 }}>
               {messages.map((m, i) => (
-                <div key={i} className={`bubble ${m.role === 'user' ? 'user' : 'jarvis'}${m.thinking ? ' thinking' : ''}${m.typing ? ' typing' : ''}`}>
-                  <span className="who">{m.role === 'user' ? 'You' : 'Jarvis'}</span>
+                <div key={i} className={`bubble ${m.role === 'user' ? 'user' : 'nexus'}${m.thinking ? ' thinking' : ''}${m.typing ? ' typing' : ''}`}>
+                  <span className="who">{m.role === 'user' ? 'You' : 'Nexus'}</span>
                   {m.thinking ? (
                     <span className="thinking-row" aria-live="polite">
                       <span className="thinking-spinner" aria-hidden="true" />
@@ -285,7 +285,7 @@ export default function PhoneMirrorPage({
                   <p style={{ color: 'var(--amber)', marginTop: 12 }}>ADB Not Found</p>
                   <p style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 6, maxWidth: 280, textAlign: 'center', lineHeight: 1.7 }}>
                     Install Android platform-tools and add adb to PATH,<br />
-                    or set <code style={{ color: 'var(--amber)' }}>JARVIS_ADB_PATH</code> in .env
+                    or set <code style={{ color: 'var(--amber)' }}>NEXUS_ADB_PATH</code> in .env
                   </p>
                 </div>
               )}
@@ -312,7 +312,7 @@ export default function PhoneMirrorPage({
                   <p style={{ color: 'var(--amber)', marginTop: 12 }}>ws-scrcpy Starting…</p>
                   <p style={{ fontSize: 10, color: 'var(--text-faint)', marginTop: 6, maxWidth: 280, textAlign: 'center', lineHeight: 1.7 }}>
                     The ws-scrcpy server is initialising on port 8080.<br />
-                    It starts automatically with JARVIS — please wait.
+                    It starts automatically with NEXUS — please wait.
                   </p>
                   <div className="stream-scanning-ring" style={{ marginTop: 16 }} />
                 </div>

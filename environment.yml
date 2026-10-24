@@ -1,4 +1,4 @@
-name: jarvis
+name: nexus
 channels:
   - conda-forge
   - defaults

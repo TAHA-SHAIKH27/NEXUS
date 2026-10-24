@@ -9,7 +9,6 @@ import os
 from typing import Any, Dict, Optional, List, Tuple
 import pywinauto
 from pywinauto import application as py_app
-from pywinauto import Desktop
 
 try:
     import mss
@@ -30,8 +29,9 @@ try:
 except ImportError:
     PYAUTOGUI_AVAILABLE = False
 
-from backend.agent.state import TaskState
-from backend.agent.registry import ToolRegistry
+# Direct-mode type aliases (kept as Any; no task-state orchestration).
+TaskState = Any
+ToolRegistry = Any
 from backend.tools.result_schema import (
     create_computer_result,
     UIElement,
@@ -350,7 +350,7 @@ class Computer:
 
     async def screenshot(self, state: TaskState) -> Dict[str, Any]:
         """Capture the screen into the laptop's main Screenshots folder
-        (mirrored to the JARVIS album)."""
+        (mirrored to the NEXUS album)."""
         try:
             import pyautogui
             import os

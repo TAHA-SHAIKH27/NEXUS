@@ -1,10 +1,10 @@
 """
-crash_report.py — Startup-crash user reporting for the J.A.R.V.I.S. watchdog.
+crash_report.py — Startup-crash user reporting for the N.E.X.U.S. watchdog.
 ==============================================================================
-Stdlib only. Used by jarvis_watchdog.handle_crash() AFTER a backend crash:
+Stdlib only. Used by nexus_watchdog.handle_crash() AFTER a backend crash:
 
   1. write_crash_summary()  -> "STARTUP CRASH/crash_<ts>.txt" in plain language:
-     what happened, why JARVIS crashed, the responsible file + exact lines,
+     what happened, why NEXUS crashed, the responsible file + exact lines,
      and what the watchdog will attempt next.
   2. pop_interactive_repair_console() -> opens ONE Windows cmd window that
      becomes a live repair shell: summary, any-key, cd to project, visible
@@ -53,13 +53,13 @@ def _human_time() -> str:
 _ERROR_MEANINGS = [
     ("SyntaxError", "a line of Python code is written in a way Python cannot understand (e.g. a missing bracket, quote, or colon)."),
     ("IndentationError", "some lines are indented inconsistently — Python uses indentation to understand code blocks."),
-    ("ModuleNotFoundError", "JARVIS tried to import a Python package that is not installed in this environment."),
-    ("ImportError", "JARVIS tried to import something that could not be loaded (missing or broken dependency)."),
+    ("ModuleNotFoundError", "NEXUS tried to import a Python package that is not installed in this environment."),
+    ("ImportError", "NEXUS tried to import something that could not be loaded (missing or broken dependency)."),
     ("NameError", "the code refers to a variable or function name that was never defined."),
     ("TypeError", "an operation received a value of the wrong type (e.g. text where a number was expected)."),
     ("AttributeError", "the code tried to use a feature that the object does not have (often after a library update)."),
-    ("FileNotFoundError", "JARVIS tried to open a file that does not exist at the expected location."),
-    ("PermissionError", "Windows blocked JARVIS from reading or writing a file (permissions/antivirus lock)."),
+    ("FileNotFoundError", "NEXUS tried to open a file that does not exist at the expected location."),
+    ("PermissionError", "Windows blocked NEXUS from reading or writing a file (permissions/antivirus lock)."),
     ("OSError", "an operating-system level problem (file lock, path, or resource issue)."),
     ("ConnectionError", "a network connection failed during startup (model/API endpoint unreachable)."),
     ("TimeoutError", "something during startup took too long and timed out."),
@@ -110,18 +110,18 @@ def write_crash_summary(crash_output: str, parsed: dict, incident_no: int) -> st
 
     tail = "\n".join((crash_output or "").strip().splitlines()[-40:])
 
-    body = f"""J.A.R.V.I.S. STARTUP CRASH SUMMARY
+    body = f"""N.E.X.U.S. STARTUP CRASH SUMMARY
 ==================================
 Date/time : {_human_time()}
 Incident  : #{incident_no}
 
 1) WHAT HAPPENED
 ----------------
-JARVIS failed while starting up and the watchdog stopped the broken backend
+NEXUS failed while starting up and the watchdog stopped the broken backend
 so it cannot keep crashing in a loop. NOTHING was deleted or changed yet —
 this file is only a report.
 
-2) WHY DID JARVIS CRASH
+2) WHY DID NEXUS CRASH
 -----------------------
 {explain_error(error_text)}
 
@@ -157,7 +157,7 @@ e) The repair summary appears in the SAME command window (it waits for it).
 
 
 # How long the watchdog waits for the visible shell to signal done (30 min —
-# agentic repairs are slow). Poll interval 5s.
+# repairs can be slow). Poll interval 5s.
 _WAIT_TIMEOUT_S = 1800
 _WAIT_POLL_S = 5
 
@@ -199,7 +199,7 @@ def _interactive_repair_bat(head_lines: list, token: str, prompt_path: str) -> d
         return (text.encode("ascii", errors="replace").decode("ascii")
                 .replace("^", "^^").replace("&", "^&").replace("|", "^|"))
 
-    script = ["@echo off", f"title JARVIS Crash Report - {token}"]
+    script = ["@echo off", f"title NEXUS Crash Report - {token}"]
     for ln in head_lines:
         ln = esc(ln)
         script.append(f"echo {ln}" if ln.strip() else "echo.")
@@ -261,7 +261,7 @@ def pop_interactive_repair_console(summary_path: str, targets: list,
     first_line = first.get("line", 0)
     lines = [
         "================================================================",
-        "  J.A.R.V.I.S. STARTUP CRASH  -  summary created",
+        "  N.E.X.U.S. STARTUP CRASH  -  summary created",
         "================================================================",
         "",
         f"  Crash summary file:",
@@ -314,7 +314,7 @@ def show_fix_summary(archived_path: str, nice_name: str, detail: str,
     """
     lines = [
         "================================================================",
-        "  J.A.R.V.I.S. SELF-HEALING  -  repair summary",
+        "  N.E.X.U.S. RECOVERY  -  repair summary",
         "================================================================",
         "",
         f"  Repaired file : {nice_name}",
@@ -324,7 +324,7 @@ def show_fix_summary(archived_path: str, nice_name: str, detail: str,
         "",
         "  Your file(s) were fixed directly in the project.",
         "  A record copy is saved under FIXED CRASH FILE.",
-        "  JARVIS is restarting now — no action needed.",
+        "  NEXUS is restarting now — no action needed.",
         "",
     ]
     for ln in lines:
@@ -335,7 +335,7 @@ def show_fix_summary(archived_path: str, nice_name: str, detail: str,
         # ASCII so the waiting cmd window can TYPE it cleanly.
         ascii_lines = [ln.encode("ascii", errors="replace").decode("ascii")
                        for ln in lines]
-        text = f"JARVIS repair summary — {_human_time()}\n\n" + "\n".join(ascii_lines)
+        text = f"NEXUS repair summary — {_human_time()}\n\n" + "\n".join(ascii_lines)
         with open(os.path.join(FIXED_DIR, "last_fix_summary.txt"), "w", encoding="utf-8") as f:
             f.write(text)
         if token:

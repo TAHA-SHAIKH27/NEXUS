@@ -1,8 +1,8 @@
 """
-Standardized tool result schemas for JARVIS.
+Standardized tool result schemas for NEXUS.
 
 All tools should return results conforming to these schemas for consistent
-verification and error handling across the agent loop.
+verification and error handling across direct tool calls.
 """
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional

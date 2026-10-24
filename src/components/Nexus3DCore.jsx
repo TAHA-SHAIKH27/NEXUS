@@ -1,23 +1,13 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 
-const THEME_COLORS = {
-  normal: {
-    coreGlow: 0x00e5ff,
-    coreDeep: 0x011328,
-    dots: 0x38bdf8,
-    orbitals: [0x00e5ff, 0x0284c7, 0x38bdf8],
-    particles: 0x0284c7,
-    grid: 0x03284c,
-  },
-  agent: {
-    coreGlow: 0xffd32f,
-    coreDeep: 0x221a02,
-    dots: 0xffe04f,
-    orbitals: [0xffd32f, 0xf59e0b, 0xfef08a],
-    particles: 0xf59e0b,
-    grid: 0x3d3204,
-  },
+const THEME = {
+  coreGlow: 0x00e5ff,
+  coreDeep: 0x011328,
+  dots: 0x38bdf8,
+  orbitals: [0x00e5ff, 0x0284c7, 0x38bdf8],
+  particles: 0x0284c7,
+  grid: 0x03284c,
 };
 
 /**
@@ -43,25 +33,22 @@ function createFibonacciSpherePoints(samples = 480, radius = 2.5) {
   return { positions, reveals };
 }
 
-export default function Jarvis3DCore({
+export default function Nexus3DCore({
   phase = 'ONLINE', // BOOT | CORE_INITIALIZING | CORE_ACTIVE | SPHERE_INITIALIZING | ORBITALS_INITIALIZING | UI_ASSEMBLY | ONLINE
   isDocked = false,
   state = 'idle',
-  agentMode = false,
   onCoreReady,
 }) {
   const containerRef = useRef(null);
   const phaseRef = useRef(phase);
   const isDockedRef = useRef(isDocked);
   const stateRef = useRef(state);
-  const agentModeRef = useRef(agentMode);
 
   useEffect(() => {
     phaseRef.current = phase;
     isDockedRef.current = isDocked;
     stateRef.current = state;
-    agentModeRef.current = agentMode;
-  }, [phase, isDocked, state, agentMode]);
+  }, [phase, isDocked, state]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -90,7 +77,7 @@ export default function Jarvis3DCore({
     container.appendChild(renderer.domElement);
 
     // Color theme
-    const theme = agentModeRef.current ? THEME_COLORS.agent : THEME_COLORS.normal;
+    const theme = THEME;
 
     // 3. Central Core Sphere Group
     const coreGroup = new THREE.Group();
@@ -307,8 +294,8 @@ export default function Jarvis3DCore({
       const currentPhase = phaseRef.current;
       const docked = isDockedRef.current;
 
-      // Audio level reactivity from window.jarvisAudioLevel
-      const rawAudio = Math.min(1.0, Math.max(0, Number(window.jarvisAudioLevel) || 0));
+      // Audio level reactivity from window.nexusAudioLevel
+      const rawAudio = Math.min(1.0, Math.max(0, Number(window.nexusAudioLevel ?? window.jarvisAudioLevel) || 0));
       smoothedAudio += (rawAudio - smoothedAudio) * 0.15;
       const pulseFactor = 1.0 + smoothedAudio * 0.28 + Math.sin(elapsed * 3.5) * 0.025;
 
@@ -435,7 +422,7 @@ export default function Jarvis3DCore({
   return (
     <div
       ref={containerRef}
-      className={`jarvis-3d-core ${isDocked ? 'is-docked' : 'is-cinematic'}`}
+      className={`nexus-3d-core ${isDocked ? 'is-docked' : 'is-cinematic'}`}
       style={{
         width: '100%',
         height: '100%',
@@ -443,7 +430,7 @@ export default function Jarvis3DCore({
         overflow: 'hidden',
         cursor: 'grab',
       }}
-      aria-label="JARVIS 3D WebGL Core"
+      aria-label="NEXUS 3D WebGL Core"
     />
   );
 }

@@ -59,7 +59,6 @@ from system_ops import (
     empty_recycle_bin,
     clean_temp_files,
 )
-from agent import get_gemini_actions, generate_image_huggingface, conversation_history, stream_chat_response, stream_gemini_actions, stream_image_analysis, stream_document_analysis
 import document_intel
 import google_oauth
 import phone_control
@@ -67,11 +66,9 @@ import whatsapp_ops
 import code_core
 from backend.startup_engine import get_startup_engine
 
-from backend.agent.core import AgentCore
-from backend.agent.state import TaskState
 from backend.agent.voice import get_voice_system, get_command_processor, TTSState
 
-app = FastAPI(title="J.A.R.V.I.S. Core", description="API Service for Windows OS Automation")
+app = FastAPI(title="N.E.X.U.S. Core", description="API Service for Windows OS Automation")
 
 # Configure CORS so our React frontend can make requests
 app.add_middleware(
@@ -87,7 +84,7 @@ app.add_middleware(
 def _start_ws_scrcpy():
     """Launch ws-scrcpy on port 8080 for the embedded phone mirror.
     Runs here (not just in the `python main.py` __main__ block) so it also
-    starts when uvicorn is invoked directly, e.g. via start_jarvis.py's
+    starts when uvicorn is invoked directly, e.g. via start_nexus.py's
     `python -m uvicorn main:app` subprocess call."""
     import subprocess
     ws_scrcpy_dir = os.path.join(os.path.dirname(__file__), "ws-scrcpy")
@@ -96,7 +93,7 @@ def _start_ws_scrcpy():
         return
     env = os.environ.copy()
     env["PORT"] = "8080"
-    env["ADB"] = os.getenv("JARVIS_ADB_PATH", "adb")
+    env["ADB"] = os.getenv("NEXUS_ADB_PATH", "") or os.getenv("JARVIS_ADB_PATH", "") or "adb"
     try:
         subprocess.Popen(
             ["npm", "start"],
@@ -213,10 +210,36 @@ def load_config() -> dict:
                 data = json.load(f)
                 data.setdefault("gemini_project_id", "")
                 data.setdefault("groq_api_key", "")
+                data.setdefault("nvidia_api_key", "")
+                data.setdefault("nvidia_model", "z-ai/glm-5.3-flash")
+                # Zetaris config (all optional; org_id is required for API calls)
+                data.setdefault("zetaris_rest_url", "http://localhost:8888/api/v1.0")
+                data.setdefault("zetaris_org_id", "")
+                data.setdefault("zetaris_api_key", "")
+                data.setdefault("zetaris_username", "")
+                data.setdefault("zetaris_password", "")
+                data.setdefault("zetaris_default_limit", 100)
+                data.setdefault("zetaris_max_limit", 100)
+                data.setdefault("zetaris_timeout_seconds", 30)
                 return data
         except Exception:
             pass
-    return {"gemini_api_key": "", "huggingface_api_key": "", "gemini_project_id": "", "groq_api_key": ""}
+    return {
+        "gemini_api_key": "",
+        "huggingface_api_key": "",
+        "gemini_project_id": "",
+        "groq_api_key": "",
+        "nvidia_api_key": "",
+        "nvidia_model": "z-ai/glm-5.3-flash",
+        "zetaris_rest_url": "http://localhost:8888/api/v1.0",
+        "zetaris_org_id": "",
+        "zetaris_api_key": "",
+        "zetaris_username": "",
+        "zetaris_password": "",
+        "zetaris_default_limit": 100,
+        "zetaris_max_limit": 100,
+        "zetaris_timeout_seconds": 30,
+    }
 
 def save_config(config: dict):
     try:
@@ -277,6 +300,15 @@ class ConfigModel(BaseModel):
     groq_api_key: str = ""
     nvidia_api_key: Optional[str] = ""
     nvidia_model: Optional[str] = "z-ai/glm-5.3-flash"
+    # Zetaris config
+    zetaris_rest_url: Optional[str] = "http://localhost:8888/api/v1.0"
+    zetaris_org_id: Optional[str] = ""
+    zetaris_api_key: Optional[str] = ""
+    zetaris_username: Optional[str] = ""
+    zetaris_password: Optional[str] = ""
+    zetaris_default_limit: Optional[int] = 100
+    zetaris_max_limit: Optional[int] = 100
+    zetaris_timeout_seconds: Optional[int] = 30
 
 # ── Code Core request models ────────────────────────────────────────────────
 class CodePreviewFixRequest(BaseModel):
@@ -321,11 +353,19 @@ class PhoneTestPinTapRequest(BaseModel):
 
 @app.get("/api/config")
 def get_config():
-    return load_config()
+    cfg = load_config()
+    # Mask secrets in response
+    masked = dict(cfg)
+    for key in ("gemini_api_key", "huggingface_api_key", "groq_api_key", "nvidia_api_key",
+                "zetaris_api_key", "zetaris_password"):
+        if masked.get(key):
+            masked[key] = "********"
+    return masked
+
 
 @app.post("/api/config")
 def post_config(req: ConfigModel):
-    # Merge into existing config so Nemotron tuning keys survive this write
+    # Merge into existing config so existing keys survive this write
     cfg = load_config()
     cfg.update({
         "gemini_api_key": req.gemini_api_key,
@@ -333,7 +373,15 @@ def post_config(req: ConfigModel):
         "gemini_project_id": req.gemini_project_id or "",
         "groq_api_key": req.groq_api_key or "",
         "nvidia_api_key": req.nvidia_api_key or "",
-        "nvidia_model": req.nvidia_model or "z-ai/glm-5.3-flash"
+        "nvidia_model": req.nvidia_model or "z-ai/glm-5.3-flash",
+        "zetaris_rest_url": req.zetaris_rest_url or "http://localhost:8888/api/v1.0",
+        "zetaris_org_id": req.zetaris_org_id or "",
+        "zetaris_api_key": req.zetaris_api_key or "",
+        "zetaris_username": req.zetaris_username or "",
+        "zetaris_password": req.zetaris_password or "",
+        "zetaris_default_limit": req.zetaris_default_limit or 100,
+        "zetaris_max_limit": req.zetaris_max_limit or 100,
+        "zetaris_timeout_seconds": req.zetaris_timeout_seconds or 30,
     })
     save_config(cfg)
     return {"status": "success", "message": "Configuration saved."}
@@ -443,7 +491,7 @@ async def startup_status():
 
 @app.get("/api/oauth/status")
 def oauth_status():
-    """Report whether Jarvis currently has a linked, usable Google account."""
+    """Report whether Nexus currently has a linked, usable Google account."""
     return {"authenticated": google_oauth.is_authenticated()}
 
 
@@ -466,7 +514,7 @@ def oauth_logout():
     return google_oauth.logout()
 
 
-# ── Proactive Gmail watcher (normal-mode announcements) ──────────────────────
+# ── Proactive Gmail watcher (announcements) ──────────────────────
 # Background thread: one check shortly after start (restart check) + every
 # poll_minutes. Important mail → voice announcement (queued, never cuts off
 # current speech) + on-screen toast via /api/notifications. Same guarded
@@ -570,7 +618,7 @@ def _ensure_gmail_worker() -> None:
         return
     _GMAIL_WORKER_STARTED = True
     thread = threading.Thread(target=_gmail_watch_worker,
-                              name="jarvis-gmail-watch", daemon=True)
+                              name="nexus-gmail-watch", daemon=True)
     thread.start()
 
 
@@ -990,7 +1038,7 @@ def reschedule_scheduled_api(job_id: str, req: RescheduleRequest):
     return res
 
 
-# ── Normal-mode scheduler ticker (reminders + scheduled WhatsApp) ────────────
+# ── Scheduler ticker (reminders + scheduled WhatsApp) ────────────
 # Fires due reminders (voice + toast, exactly once) and sends due scheduled
 # WhatsApp messages via the existing desktop sender. Same guarded daemon
 # pattern as the Gmail watcher; stores are file-backed so jobs survive
@@ -1069,7 +1117,7 @@ _ensure_scheduler_worker()
 
 @app.get("/api/status")
 async def read_status():
-    return {"status": "online", "system": "J.A.R.V.I.S.", "message": "All systems operational, sir."}
+    return {"status": "online", "system": "N.E.X.U.S.", "message": "All systems operational, sir."}
 
 
 @app.get("/api/network/status")
@@ -1124,20 +1172,11 @@ async def voice_command(req: VoiceCommandRequest):
 
     # Get command processor and process the voice command
     processor = get_command_processor()
-    processor.set_agent_core(AgentCore())
 
-    # Create a temporary task state for context checking
-    temp_state = TaskState()
-    temp_state.task = getattr(temp_state, 'task', '') or ''
-
-    result = await processor.process_command(req.prompt.strip(), temp_state)
+    result = await processor.process_command(req.prompt.strip(), None)
 
     if result.get("status") == "interrupted":
         return {"status": "interrupted", "speak": "Interrupted, sir."}
-    elif result.get("status") == "mid_task_instruction":
-        return {"status": "mid_task_instruction", "speak": "Instruction noted, sir. Updating task."}
-    elif result.get("status") == "task_queued":
-        return {"status": "task_queued", "speak": "Noted, sir — queued to run after the current task."}
     elif result.get("status") == "new_command":
         # Process as new command — process_command is sync (threadpool),
         # so offload it instead of awaiting a coroutine.
@@ -1172,7 +1211,7 @@ async def voice_tts_state():
 
 @app.get("/api/voice/voices")
 async def voice_list():
-    """Installed TTS voices (SAPI) with genders + which one JARVIS uses.
+    """Installed TTS voices (SAPI) with genders + which one NEXUS uses.
 
     Reads only worker-maintained state — never touches the SAPI COM object
     from a request thread (that cross-thread access crashes the backend)."""
@@ -1347,13 +1386,13 @@ def phone_stream():
         raise HTTPException(status_code=400, detail="No authorized Android device found, sir.")
 
     def generate():
-        boundary = "jarvisframe"
+        boundary = "nexusframe"
         for frame in phone_control.stream_frames(dev):
             yield (
                 f"--{boundary}\r\nContent-Type: image/png\r\nContent-Length: {len(frame)}\r\n\r\n"
             ).encode() + frame + b"\r\n"
 
-    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=jarvisframe")
+    return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=nexusframe")
 
 
 @app.get("/api/phone/screenshot/{filename}")
@@ -1426,7 +1465,7 @@ def phone_unlock(req: PhoneUnlockRequest):
 def phone_test_pin_tap(req: PhoneTestPinTapRequest):
     """Calibration helper: wake the screen and tap where a single digit
     should be on the lock screen's PIN pad, without swiping or submitting
-    anything. Use this to verify/tune JARVIS_PIN_Y_OFFSET / JARVIS_PIN_X_OFFSET."""
+    anything. Use this to verify/tune NEXUS_PIN_Y_OFFSET / NEXUS_PIN_X_OFFSET."""
     res = phone_control.test_pin_digit_tap(req.digit)
     if res["status"] == "error":
         raise HTTPException(status_code=400, detail=res["message"])
@@ -1444,63 +1483,76 @@ def phone_ocr():
 
 @app.post("/api/chat/stream")
 def chat_stream(req: ChatStreamRequest):
-    """Free-form conversational endpoint (Chat mode) - streams plain text
-    back as it's generated, unlike /api/command which waits for a full
-    JSON action list. Foundation for the upcoming image/document Q&A."""
+    """Free-form conversational endpoint (Chat mode).
+
+    Returns a deterministic reply (smalltalk/history-aware) as plain text.
+    """
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
-    api_key_to_use = req.apiKey
-    config = load_config()
-    if not api_key_to_use:
-        api_key_to_use = config.get("gemini_api_key")
-    gemini_project_id = config.get("gemini_project_id", "")
+    def _gen():
+        try:
+            import agent as _agent_mod
+            _agent_mod.add_to_history("user", req.prompt)
+            try:
+                from backend.agent import human_replies as _hr
+                small = _hr.smalltalk(req.prompt)
+            except Exception:
+                small = None
+            if small:
+                text = small
+            else:
+                text = ("Chat is limited, sir. "
+                        "I can still handle reminders, scheduled messages, notes, and "
+                        "status checks via /api/command.")
+            try:
+                _agent_mod.add_to_history("assistant", text)
+            except Exception:
+                pass
+        except Exception as exc:
+            text = f"Chat unavailable, sir: {exc}"
+        yield text
 
-    return StreamingResponse(
-        stream_chat_response(req.prompt, api_key_to_use, gemini_project_id),
-        media_type="text/plain; charset=utf-8"
-    )
+    return StreamingResponse(_gen(), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/command/stream")
 def command_stream(req: ChatStreamRequest):
-    """Command execution endpoint - streams JSON actions as they're generated.
-    Unlike /api/command which waits for complete response, this streams
-    actions as they're parsed, enabling immediate execution."""
+    """Command endpoint (streaming).
+
+    Streams a single JSON envelope with a deterministic `speak`
+    message instead.
+    """
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
 
-    api_key_to_use = req.apiKey
-    config = load_config()
-    if not api_key_to_use:
-        api_key_to_use = config.get("gemini_api_key")
-    gemini_project_id = config.get("gemini_project_id", "")
+    def _gen():
+        payload = {
+            "type": "speak",
+            "text": ("Command streaming is unavailable, sir. Please use "
+                     "/api/command for direct commands."),
+        }
+        yield "data: " + json.dumps(payload) + "\n\n"
+        yield "data: " + json.dumps({"type": "done", "message": "Stream complete"}) + "\n\n"
 
-    return StreamingResponse(
-        stream_gemini_actions(req.prompt, api_key_to_use, gemini_project_id),
-        media_type="text/plain; charset=utf-8"
-    )
+    return StreamingResponse(_gen(), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/vision/stream")
 def vision_stream(req: ImageAnalysisRequest):
-    """Image understanding endpoint - streams a description/answer about an
-    uploaded image, using the same SSE streaming approach as /api/chat/stream."""
+    """Image understanding endpoint.
+
+    Unavailable here. Returns an explicit notice instead of a silent fake.
+    """
     if not req.image_base64.strip():
         raise HTTPException(status_code=400, detail="No image data received.")
     if not req.mime_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File does not appear to be an image.")
 
-    api_key_to_use = req.apiKey
-    config = load_config()
-    if not api_key_to_use:
-        api_key_to_use = config.get("gemini_api_key")
-    gemini_project_id = config.get("gemini_project_id", "")
+    def _gen():
+        yield ("Image analysis is unavailable, sir.")
 
-    return StreamingResponse(
-        stream_image_analysis(req.image_base64, req.mime_type, req.prompt or "", api_key_to_use, gemini_project_id),
-        media_type="text/plain; charset=utf-8"
-    )
+    return StreamingResponse(_gen(), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/document/extract")
@@ -1541,21 +1593,25 @@ async def extract_document(file: UploadFile = File(...)):
 
 @app.post("/api/document/stream")
 def document_stream(req: DocumentAnalysisRequest):
-    """Ask a question about (or request a summary of) previously-extracted
-    document text - streams the answer back like /api/chat/stream."""
+    """Ask about previously-extracted document text.
+
+    Returns a deterministic lexical summary (first sections + question echo).
+    /api/document/extract above is retained unchanged.
+    """
     if not req.document_text.strip():
         raise HTTPException(status_code=400, detail="No document text received.")
 
-    api_key_to_use = req.apiKey
-    config = load_config()
-    if not api_key_to_use:
-        api_key_to_use = config.get("gemini_api_key")
-    gemini_project_id = config.get("gemini_project_id", "")
+    def _gen():
+        text = (req.document_text or "").strip()
+        question = (req.prompt or "").strip()
+        head = text[:1500]
+        tail = ""
+        if question:
+            tail = f"\n\nQuestion noted: {question[:300]}"
+        yield (f"Here is the start of the extracted text ({len(text)} chars), sir:\n\n"
+               f"{head}{tail}")
 
-    return StreamingResponse(
-        stream_document_analysis(req.document_text, req.filename, req.prompt or "", api_key_to_use, gemini_project_id),
-        media_type="text/plain; charset=utf-8"
-    )
+    return StreamingResponse(_gen(), media_type="text/plain; charset=utf-8")
 
 
 @app.post("/api/command")
@@ -1593,7 +1649,7 @@ def process_command(req: CommandRequest):
             "image_data": None
         }
 
-    # Normal-mode deterministic handlers: reminders + scheduled WhatsApp are
+    # Deterministic handlers: reminders + scheduled WhatsApp are
     # answered instantly without an LLM round-trip (same style as the reset
     # keywords above). Immediate WhatsApp sends fall through to Gemini below.
     try:
@@ -1603,6 +1659,16 @@ def process_command(req: CommandRequest):
             return _direct
     except Exception as exc:
         print(f"[scheduler] direct handler failed: {exc}")
+
+    # ── Zetaris connector (explicit command: zetaris: ...) ──────────────────
+    # Handles: zetaris: test connection, zetaris: list datasources, zetaris: query SELECT ...
+    try:
+        from backend.tools import zetaris as _zetaris
+        _zetaris_result = _zetaris.handle_zetaris_command(req.prompt, load_config())
+        if _zetaris_result is not None:
+            return _zetaris_result
+    except Exception as exc:
+        print(f"[zetaris] handler failed: {exc}")
 
     # ── Deterministic identity memory (never LLM-dependent) ──────────────
     # "My name is Taha" / "I live in Pune" / "Pune only for weather" are
@@ -1679,827 +1745,361 @@ def process_command(req: CommandRequest):
     except Exception as exc:
         print(f"[memory] deterministic handler failed: {exc}")
 
-    # Load config once
-    config = load_config()
-    api_key_to_use = req.apiKey or config.get("gemini_api_key")
-    gemini_project_id = config.get("gemini_project_id", "")
-    hf_key = config.get("huggingface_api_key", "")
-
-    # Gather files context
-    files_context = list_files()
-
-    # Sync endpoint => already on a worker thread, direct blocking call is fine
-    # and keeps the asyncio event loop free for /api/status + watchdog.
-    actions = get_gemini_actions(req.prompt, api_key_to_use, files_context, gemini_project_id)
-
-    # Home-city override: a bare "weather" (or the model's example-biased
-    # "London" / "your location") resolves to the remembered default city.
-    # An explicitly named city always wins and is left untouched.
+    # ── Deterministic local intents ────────
+    # The intents below are single-step, direct tool calls.
     try:
-        if isinstance(actions, list):
-            _home = ""
-            try:
-                from backend.agent import phase1_memory as _pm2
-                _home = (_pm2.get_home_city() or "").strip()
-            except Exception:
-                _home = ""
-            if _home:
-                for _a in actions:
-                    if isinstance(_a, dict) and _a.get("type") == "weather":
-                        _c = str(_a.get("city", "") or "").strip()
-                        if _c.casefold() in ("", "london", "your location",
-                                              "my location", "here", "local"):
-                            _a["city"] = _home
+        import agent as _agent_hist
+        _agent_hist.add_to_history("user", req.prompt)
     except Exception:
         pass
-    
-    execution_logs = []
+    execution_logs = [f"INPUT RECEIVED: \"{req.prompt}\""]
     speak_text = ""
     file_data = None
     refresh_files = False
-    image_data = None  # For generated images
-    clarification_needed = None  # Populated when JARVIS needs to ask a follow-up
-    narration_steps = []  # Sequential spoken updates for multi-step tasks
-    
-    execution_logs.append(f"INPUT RECEIVED: \"{req.prompt}\"")
-    
-    for action in actions:
-        # A malformed action (e.g. a bare string from the model) must never
-        # 500 the whole command into a bare "Command failed".
-        if not isinstance(action, dict):
-            execution_logs.append(f"ACTION: Skipping malformed action {str(action)[:80]}")
-            continue
+    image_data = None
+    timer_data = None
+    clarification_needed = None
+    narration_steps = []
+    pl = req.prompt.lower().strip()
+
+    def _base_response():
         try:
-            act_type = action.get("type", "unknown")
+            from backend.agent.lang_detect import detect_lang
+            lang = detect_lang(speak_text, req.prompt)
         except Exception:
-            execution_logs.append("ACTION: Skipping unreadable action")
-            continue
-        
-        if act_type == "speak":
-            speak_text = action.get("text", "")
-            execution_logs.append(f"JARVIS: {speak_text}")
+            lang = "en"
+        full_speak = speak_text or "I have completed your request, sir."
+        try:
+            if _memory_note and _memory_note.casefold() not in (full_speak or "").casefold():
+                full_speak = f"{_memory_note} {full_speak}".strip()
+        except Exception:
+            pass
+        try:
+            import agent as _agent_hist2
+            _agent_hist2.add_to_history("assistant", full_speak)
+        except Exception:
+            pass
+        return {
+            "speak": full_speak,
+            "speak_lang": lang,
+            "logs": execution_logs,
+            "file_data": file_data,
+            "refresh_files": refresh_files,
+            "image_data": image_data,
+            "timer_data": timer_data,
+            "clarification_needed": clarification_needed,
+            "narration_steps": narration_steps,
+        }
 
-        elif act_type == "shutdown":
+    # --- Date / time ---
+    if any(x in pl for x in ["what time", "what's the time", "current time",
+                             "what day", "what's the date", "current date",
+                             "today's date", "time now", "date today"]):
+        execution_logs.append("ACTION: Getting date/time")
+        res = get_datetime_info()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+
+    # --- System stats ---
+    if ("system stats" in pl or "cpu" in pl or "hardware" in pl
+            or "pc working good" in pl):
+        execution_logs.append("ACTION: Loading HUD diagnostics...")
+        try:
+            stats = get_system_stats()
+            if isinstance(stats, dict) and "error" not in stats:
+                procs = stats.get("processes", []) or []
+                top = ", ".join(
+                    p.get("name", "?") for p in procs[:5] if p.get("name")
+                ) or "no processes sampled"
+                speak_text = (
+                    f"CPU at {stats.get('cpu', '?')} percent, memory at "
+                    f"{stats.get('memory', '?')} percent, disk at "
+                    f"{stats.get('disk', '?')} percent, sir. "
+                    f"Busiest applications: {top}."
+                )
+                execution_logs.append(f"RESULT: {speak_text}")
+            else:
+                speak_text = "I couldn't sample the system stats, sir."
+        except Exception as exc:
+            speak_text = f"Diagnostics failed, sir: {exc}"
+            execution_logs.append(f"RESULT: {speak_text}")
+        return _base_response()
+
+    # --- Health check ---
+    if "health" in pl or "diagnose" in pl or "diagnostic" in pl:
+        execution_logs.append("ACTION: Performing system diagnosis health check")
+        res = check_pc_health()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+
+    # --- Battery ---
+    if any(x in pl for x in ["battery", "charge level", "power level", "battery life"]):
+        execution_logs.append("ACTION: Checking battery")
+        res = get_battery_info()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+
+    # --- Network ---
+    if any(x in pl for x in ["ip address", "my ip", "network info", "wifi",
+                             "network status", "am i connected",
+                             "internet connection"]):
+        execution_logs.append("ACTION: Getting network info")
+        res = get_network_info()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+
+    # --- Weather (home-city default, explicit city wins) ---
+    if "weather" in pl or "temperature" in pl or "forecast" in pl:
+        m = re.search(r"(?:weather|temperature|forecast)(?:\s+in|\s+for|\s+at)?\s+([\w\s]+)", pl)
+        city = m.group(1).strip() if m else ""
+        city = re.sub(r"\b(today|now|currently|please|right now|only|always|by default|"
+                      r"as default|remember|just|alone|for me|tomorrow|"
+                      r"day after tomorrow|tonight|today)\b", "", city, flags=re.I).strip()
+        city = re.sub(r"\s+", " ", city).strip(" ,.")
+        if not city:
             try:
-                delay = int(action.get("delay_seconds", 0))
-            except (TypeError, ValueError):
-                delay = 0
-            res = shutdown_pc(delay)
-            execution_logs.append(f"ACTION: Shutdown initiated")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "restart":
-            try:
-                delay = int(action.get("delay_seconds", 0))
-            except (TypeError, ValueError):
-                delay = 0
-            res = restart_pc(delay)
-            execution_logs.append(f"ACTION: Restart initiated")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "cancel_shutdown":
-            res = cancel_shutdown()
-            execution_logs.append(f"ACTION: Cancel shutdown")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "sleep":
-            res = sleep_pc()
-            execution_logs.append("ACTION: Sleep PC")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "lock_screen":
-            res = lock_screen()
-            execution_logs.append("ACTION: Lock screen")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "clipboard_read":
-            res = get_clipboard()
-            execution_logs.append("ACTION: Reading clipboard")
-            execution_logs.append(f"RESULT: {res['message']}")
-            # Always override speak_text with actual clipboard content
-            speak_text = res["message"]
-
-        elif act_type == "clipboard_write":
-            text = action.get("text", "")
-            res = set_clipboard(text)
-            execution_logs.append(f"ACTION: Writing to clipboard")
-            execution_logs.append(f"RESULT: {res['message']}")
-            speak_text = res["message"]
-
-        elif act_type == "battery":
-            res = get_battery_info()
-            execution_logs.append("ACTION: Checking battery")
-            execution_logs.append(f"RESULT: {res['message']}")
-            # Always override with actual battery data
-            speak_text = res["message"]
-
-        elif act_type == "network_info":
-            res = get_network_info()
-            execution_logs.append("ACTION: Getting network info")
-            execution_logs.append(f"RESULT: {res['message']}")
-            # Always override with actual network data
-            speak_text = res["message"]
-
-        elif act_type == "weather":
-            city = (action.get("city", "") or "").strip()
-            if not city:
-                try:
-                    from backend.agent import phase1_memory as _wmem
-                    city = _wmem.get_home_city() or ""
-                except Exception:
-                    city = ""
-            try:
-                day = int(action.get("day", 0) or 0)
-            except (TypeError, ValueError):
-                day = 0
-            execution_logs.append(f"ACTION: Fetching weather for {city or 'home city'} (day+{day})")
-            res = get_weather(city, day)
-            execution_logs.append(f"RESULT: {res['message']}")
-            # Always override with actual weather data (replaces any prior 'retrieving' placeholder)
-            speak_text = res["message"]
-
-        elif act_type == "calculate":
-            expr = str(action.get("expression", "") or "")
-            execution_logs.append(f"ACTION: Calculating \"{expr[:80]}\"")
-            try:
-                from backend.tools import knowledge as _know
-                res = _know.calculate(expr or req.prompt)
-            except Exception as exc:
-                res = {"status": "error", "message": f"Couldn't crunch that: {exc}"}
-            execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
-            speak_text = res.get("message", "Couldn't crunch that.")
-
-        elif act_type == "convert":
-            ctext = str(action.get("text", "") or "")
-            execution_logs.append(f"ACTION: Converting \"{ctext[:80]}\"")
-            try:
-                from backend.tools import knowledge as _know
-                res = _know.convert_units(ctext or req.prompt)
-            except Exception as exc:
-                res = {"status": "error", "message": f"Couldn't convert that: {exc}"}
-            execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
-            speak_text = res.get("message", "Couldn't convert that.")
-
-        elif act_type == "define":
-            word = str(action.get("word", "") or "")
-            execution_logs.append(f"ACTION: Defining \"{word[:40]}\"")
-            try:
-                from backend.tools import knowledge as _know
-                res = _know.define_word(word or req.prompt)
-            except Exception as exc:
-                res = {"status": "error", "message": f"Dictionary lookup failed: {exc}"}
-            execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
-            speak_text = res.get("message", "Couldn't define that.")
-
-        elif act_type == "joke":
-            joke_lang = str(action.get("lang", "") or "")
-            execution_logs.append(f"ACTION: Telling a joke (lang={joke_lang or 'en'})")
-            try:
-                from backend.tools import knowledge as _know
-                res = _know.get_joke(joke_lang or "en")
+                from backend.agent import phase1_memory as _wmem
+                city = _wmem.get_home_city() or ""
             except Exception:
-                res = {"status": "success", "message": "Why do programmers prefer dark mode? Because light attracts bugs."}
-            execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
-            speak_text = res.get("message", "")
+                city = ""
+        day = 0
+        if re.search(r"\bday\s+after\s+tomorrow\b", pl):
+            day = 2
+        elif re.search(r"\btomorrow\b", pl):
+            day = 1
+        execution_logs.append(f"ACTION: Fetching weather for {city or 'home city'} (day+{day})")
+        res = get_weather(city, day)
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
 
-        elif act_type == "fact":
-            fact_lang = str(action.get("lang", "") or "")
-            execution_logs.append(f"ACTION: Sharing a fact (lang={fact_lang or 'en'})")
-            try:
-                from backend.tools import knowledge as _know
-                res = _know.get_fact(fact_lang or "en")
-            except Exception:
-                res = {"status": "success", "message": "Honey never spoils — 3,000-year-old pots found in tombs were still edible."}
-            execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
-            speak_text = res.get("message", "")
+    # --- Calculator (safe local math) ---
+    try:
+        from backend.tools.knowledge import quick_math_detect as _qmd
+        _expr = _qmd(req.prompt)
+    except Exception:
+        _expr = None
+    if _expr or any(k in pl for k in ["calculate", "compute", "evaluate", "solve"]):
+        execution_logs.append("ACTION: Calculating")
+        try:
+            from backend.tools import knowledge as _know
+            res = _know.calculate(_expr or req.prompt)
+        except Exception as exc:
+            res = {"status": "error", "message": f"Couldn't crunch that: {exc}"}
+        execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
+        speak_text = res.get("message", "Couldn't crunch that.")
+        return _base_response()
 
-        elif act_type == "empty_recycle":
-            execution_logs.append("ACTION: Emptying Recycle Bin")
-            res = empty_recycle_bin()
-            execution_logs.append(f"RESULT: {res['message']}")
-            speak_text = res["message"]
+    # --- Unit conversion ---
+    if "convert" in pl or "conversion" in pl:
+        execution_logs.append("ACTION: Converting")
+        try:
+            from backend.tools import knowledge as _know
+            res = _know.convert_units(req.prompt)
+        except Exception as exc:
+            res = {"status": "error", "message": f"Couldn't convert that: {exc}"}
+        execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
+        speak_text = res.get("message", "Couldn't convert that.")
+        return _base_response()
 
-        elif act_type == "clean_temp":
-            execution_logs.append("ACTION: Cleaning temp folders")
-            res = clean_temp_files()
-            execution_logs.append(f"RESULT: {res['message']}")
-            speak_text = res["message"]
+    # --- Dictionary ---
+    if any(k in pl for k in ["define", "definition", "meaning of", "mean by"]):
+        execution_logs.append("ACTION: Dictionary lookup")
+        try:
+            from backend.tools import knowledge as _know
+            res = _know.define_word(req.prompt)
+        except Exception as exc:
+            res = {"status": "error", "message": f"Dictionary lookup failed: {exc}"}
+        execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
+        speak_text = res.get("message", "Couldn't define that.")
+        return _base_response()
 
-        elif act_type == "datetime_info":
-            res = get_datetime_info()
-            execution_logs.append("ACTION: Getting date/time")
-            execution_logs.append(f"RESULT: {res['message']}")
-            # Always override with actual datetime data
-            speak_text = res["message"]
+    # --- Jokes & facts ---
+    if re.search(r"\bjoke\b", pl) or "make me laugh" in pl or "cheer me up" in pl:
+        execution_logs.append("ACTION: Telling a joke")
+        try:
+            from backend.tools import knowledge as _know
+            res = _know.get_joke("en")
+        except Exception:
+            res = {"status": "success",
+                   "message": "Why do programmers prefer dark mode? Because light attracts bugs."}
+        speak_text = res.get("message", "")
+        return _base_response()
+    if re.search(r"\bfact\b", pl) or "amaze me" in pl or "surprise me" in pl:
+        execution_logs.append("ACTION: Sharing a fact")
+        try:
+            from backend.tools import knowledge as _know
+            res = _know.get_fact("en")
+        except Exception:
+            res = {"status": "success",
+                   "message": "Honey never spoils \u2014 3,000-year-old pots found in tombs were still edible."}
+        speak_text = res.get("message", "")
+        return _base_response()
 
-        elif act_type == "read_email":
-            try:
-                count = int(action.get("count", 1))
-            except (TypeError, ValueError):
-                count = 1
-            sender = (action.get("sender", "") or "").strip()
-            unread_only = bool(action.get("unread_only", False))
-            try:
-                days = int(action.get("days", 0) or 0)
-            except (TypeError, ValueError):
-                days = 0
-            try:
-                older_than_days = int(action.get("older_than_days", 0) or 0)
-            except (TypeError, ValueError):
-                older_than_days = 0
-            execution_logs.append(
-                f"ACTION: Reading mail via Gmail API "
-                f"(count={count}, sender={sender or 'any'}, "
-                f"unread_only={unread_only}, days={days})")
-            try:
-                from backend.tools import gmail_notify
-                # Sync endpoint => direct call (already off the event loop).
-                res = gmail_notify.read_latest_mail(
-                    count, sender, unread_only, days, older_than_days)
-            except Exception as exc:
-                res = {"status": "error",
-                       "message": f"Couldn't reach Gmail, sir: {exc}"}
-            execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
-            # Always override with the real mail content — read aloud, never
-            # by opening an app.
-            speak_text = res.get("message", "Couldn't read your mail, sir.")
+    # --- Volume ---
+    if "volume up" in pl or "louder" in pl or "increase volume" in pl:
+        execution_logs.append("ACTION: Increasing system volume")
+        res = adjust_volume("up")
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+    if "volume down" in pl or "quieter" in pl or "decrease volume" in pl:
+        execution_logs.append("ACTION: Decreasing system volume")
+        res = adjust_volume("down")
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+    if "mute" in pl:
+        execution_logs.append("ACTION: Toggling system mute")
+        res = adjust_volume("mute")
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
 
-        elif act_type == "send_email":
-            to = (action.get("to", "") or "").strip()
-            subject = (action.get("subject", "") or "").strip()
-            body = (action.get("body", "") or "").strip()
-            execution_logs.append(f"ACTION: Sending mail to \"{to}\"")
-            try:
-                from backend.tools import gmail_notify
-                res = gmail_notify.send_email(to, subject, body)
-            except Exception as exc:
-                res = {"status": "error",
-                       "message": f"Couldn't send that mail, sir: {exc}"}
-            execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
-            speak_text = res.get("message", "Couldn't send that mail, sir.")
+    # --- Media ---
+    if "next track" in pl or "skip song" in pl or "skip track" in pl:
+        execution_logs.append("ACTION: Skipping media track")
+        res = media_control("next")
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+    if "previous track" in pl or "prev track" in pl or "go back a track" in pl:
+        execution_logs.append("ACTION: Playing previous media track")
+        res = media_control("prev")
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+    if ("play" in pl and "pause" in pl) or "toggle media" in pl:
+        execution_logs.append("ACTION: Toggling media playback")
+        res = media_control("play")
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
 
-        elif act_type == "gmail_vip":
-            op = (action.get("op", "add") or "add").strip().lower()
-            contact = (action.get("contact", "") or "").strip()
-            execution_logs.append(f"ACTION: Gmail VIP {op} \"{contact}\"")
-            try:
-                from backend.tools import gmail_notify
-                if op == "remove":
-                    res = gmail_notify.remove_vip(contact)
-                elif op == "list":
-                    vips = gmail_notify.load_watch().get("vip_senders", [])
-                    res = {"status": "success",
-                           "message": ("No VIP senders yet, sir — say 'treat mail "
-                                       "from X as important' to add one.")
-                           if not vips else
-                           "Your VIP senders, sir: " + ", ".join(vips) + "."}
-                else:
-                    res = gmail_notify.add_vip(contact)
-            except Exception as exc:
-                res = {"status": "error",
-                       "message": f"Couldn't update VIPs, sir: {exc}"}
-            execution_logs.append(f"RESULT: {res.get('message', '')[:200]}")
-            if not speak_text:
-                speak_text = res.get("message", "")
+    # --- Screenshot (PC display) ---
+    if ("screenshot" in pl or "capture screen" in pl) and "phone" not in pl:
+        execution_logs.append("ACTION: Taking screenshot")
+        res = take_screenshot()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        refresh_files = True
+        return _base_response()
 
-        elif act_type == "open_url":
-            url = action.get("url", "")
-            res = open_url(url)
-            execution_logs.append(f"ACTION: Opening URL {url}")
-            execution_logs.append(f"RESULT: {res['message']}")
+    # --- Power controls (single direct calls, user-explicit) ---
+    if "cancel shutdown" in pl or "abort shutdown" in pl or "cancel restart" in pl:
+        execution_logs.append("ACTION: Cancel shutdown")
+        res = cancel_shutdown()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+    if any(x in pl for x in ["shut down", "shutdown", "turn off the pc", "power off"]):
+        delay_match = re.search(r"in\s+(\d+)\s*min", pl)
+        delay = int(delay_match.group(1)) * 60 if delay_match else 0
+        execution_logs.append("ACTION: Shutdown initiated")
+        res = shutdown_pc(delay)
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+    if any(x in pl for x in ["restart", "reboot"]):
+        delay_match = re.search(r"in\s+(\d+)\s*min", pl)
+        delay = int(delay_match.group(1)) * 60 if delay_match else 0
+        execution_logs.append("ACTION: Restart initiated")
+        res = restart_pc(delay)
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+    if any(x in pl for x in ["sleep", "hibernate", "put pc to sleep"]):
+        execution_logs.append("ACTION: Sleep PC")
+        res = sleep_pc()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
+    if "lock" in pl and any(x in pl for x in ["lock", "lock screen", "lock pc", "lock computer"]):
+        execution_logs.append("ACTION: Lock screen")
+        res = lock_screen()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
 
-        elif act_type == "set_timer":
-            try:
-                seconds = int(action.get("seconds", 60))
-            except (TypeError, ValueError):
-                seconds = 60
-            label = action.get("label", "Timer")
-            execution_logs.append(f"ACTION: Setting timer for {seconds} seconds")
-            # Timer is purely frontend-driven; we pass the data back
-            if not speak_text:
-                minutes = seconds // 60
-                secs = seconds % 60
-                time_str = f"{minutes}m {secs}s" if minutes else f"{secs}s"
-                speak_text = f"Timer set for {time_str}, sir."
+    # --- Clipboard ---
+    if "clipboard" in pl and any(x in pl for x in ["what's in", "read", "show"]):
+        execution_logs.append("ACTION: Reading clipboard")
+        res = get_clipboard()
+        execution_logs.append(f"RESULT: {res['message']}")
+        speak_text = res["message"]
+        return _base_response()
 
-        elif act_type == "add_note":
-            note_text = action.get("text", "")
-            execution_logs.append(f"ACTION: Adding note")
+    # --- Timer (frontend-driven) ---
+    timer_match = re.search(r"(?:set(?:\s+a)?\s+timer|timer)(?:\s+for)?\s+(\d+)\s*"
+                            r"(second|minute|hour|sec|min|hr)s?", pl)
+    if timer_match:
+        amount = int(timer_match.group(1))
+        unit = timer_match.group(2)
+        if unit in ("hour", "hr"):
+            seconds = amount * 3600
+        elif unit in ("minute", "min"):
+            seconds = amount * 60
+        else:
+            seconds = amount
+        timer_data = {"seconds": seconds, "label": "Timer"}
+        execution_logs.append(f"ACTION: Setting timer for {seconds} seconds")
+        minutes = seconds // 60
+        secs = seconds % 60
+        time_str = f"{minutes}m {secs}s" if minutes else f"{secs}s"
+        speak_text = f"Timer set for {time_str}, sir."
+        return _base_response()
+
+    # --- Notes / todos ---
+    note_match = re.search(r"(?:add(?:\s+a)?\s+note|note(?:\s+that)?)\s*[:\"]?\s*(.+)", pl)
+    if note_match and "todo" not in pl and "remind" not in pl:
+        note_text = note_match.group(1).strip()
+        if note_text:
+            execution_logs.append("ACTION: Adding note")
             from datetime import datetime as dt
             notes = _load_json_list(NOTES_FILE)
             note = {"id": int(dt.now().timestamp() * 1000), "text": note_text,
                     "time": dt.now().strftime("%b %d %H:%M")}
             notes.append(note)
             _save_json_list(NOTES_FILE, notes)
-            execution_logs.append(f"RESULT: Note added")
-
-        elif act_type == "add_todo":
-            todo_text = action.get("text", "")
-            execution_logs.append(f"ACTION: Adding todo")
+            execution_logs.append("RESULT: Note added")
+            speak_text = "Note added, sir."
+            return _base_response()
+    todo_match = re.search(r"(?:add(?:\s+a)?\s+todo|todo(?:\s+item)?)\s*[:\"]?\s*(.+)", pl)
+    if todo_match and "remind" not in pl:
+        todo_text = todo_match.group(1).strip()
+        if todo_text:
+            execution_logs.append("ACTION: Adding todo")
             from datetime import datetime as dt
             todos = _load_json_list(TODOS_FILE)
             todo = {"id": int(dt.now().timestamp() * 1000), "text": todo_text, "done": False}
             todos.append(todo)
             _save_json_list(TODOS_FILE, todos)
-            execution_logs.append(f"RESULT: Todo added")
+            execution_logs.append("RESULT: Todo added")
+            speak_text = "Todo added, sir."
+            return _base_response()
 
-        elif act_type == "remember":
-            mem_text = (action.get("text", "") or "").strip()
-            execution_logs.append(f"ACTION: Storing memory \"{mem_text[:80]}\"")
-            # Guard: questions are NOT facts ("tumhara naam kya hai?" must
-            # never be stored as a memory, nor spoken back as one).
-            _is_question = (not mem_text or mem_text.rstrip().endswith("?")
-                            or bool(re.search(
-                                r"\b(kya|kaun|kab|kahan|kaise|kitna|what|who|whom|whose|which|when|where|why|how)\b",
-                                mem_text, re.I)))
-            if _is_question:
-                # Logged as MEMORY: (not RESULT:) so it can never leak into
-                # the spoken reply via the humanize result extractor.
-                execution_logs.append(
-                    f"MEMORY: Skipped save — question, not a fact: \"{mem_text[:80]}\"")
-            else:
-                try:
-                    from backend.agent import phase1_memory
-                    saved = phase1_memory.remember(
-                        mem_text, category="general", source="jarvis-command")
-                    # Internal status only (MEMORY:, not RESULT:) — the user
-                    # hears Gemini's speak line, never "Memory stored (ok)".
-                    execution_logs.append(
-                        f"MEMORY: Stored ({saved.get('status', 'ok')}): \"{mem_text[:80]}\"")
-                except Exception as exc:
-                    execution_logs.append(f"MEMORY: Store failed: {exc}")
-            
-            
-        elif act_type == "open_app":
-            app_name = action.get("app_name", "")
-            execution_logs.append(f"ACTION: Opening application \"{app_name}\"")
-            res = launch_any_app(app_name) or {"status": "error",
-                "message": f"Couldn't launch {app_name}, sir."}
-            execution_logs.append(f"RESULT: {res['message']}")
-            
-        elif act_type == "close_app":
-            app_name = action.get("app_name", "")
-            execution_logs.append(f"ACTION: Closing application \"{app_name}\"")
-            res = close_application(app_name) or {"status": "error",
-                "message": f"Couldn't close {app_name}, sir."}
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "launch_app":
-            app_name = action.get("app_name", "")
-            execution_logs.append(f"ACTION: Launching application \"{app_name}\"")
-            res = launch_any_app(app_name) or {"status": "error",
-                "message": f"Couldn't launch {app_name}, sir."}
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "open_folder":
-            target = action.get("folder", action.get("path", ""))
-            execution_logs.append(f"ACTION: Opening folder \"{target}\"")
-            res = open_folder(target)
-            execution_logs.append(f"RESULT: {res['message']}")
-            if not speak_text:
-                speak_text = res["message"]
-            
-        elif act_type == "write_file":
-            filename = action.get("filename", "")
-            content = action.get("content", "")
-            execution_logs.append(f"ACTION: Writing file \"{filename}\"")
-            res = write_file(filename, content)
-            execution_logs.append(f"RESULT: {res['message']}")
-            refresh_files = True
-            
-        elif act_type == "read_file":
-            filename = action.get("filename", "")
-            execution_logs.append(f"ACTION: Reading file \"{filename}\"")
-            res = read_file(filename)
-            execution_logs.append(f"RESULT: {res.get('message') or 'Success'}")
-            if res["status"] == "success":
-                file_data = {
-                    "filename": res["filename"],
-                    "content": res["content"]
-                }
-                if not speak_text and res.get("message"):
-                    speak_text = res["message"]
-            elif res["status"] == "clarify":
-                clarification_needed = {
-                    "question": res["message"],
-                    "context": "read_file",
-                    "options": res.get("options", []),
-                }
-                speak_text = res["message"]
-                
-        elif act_type == "delete_file":
-            filename = action.get("filename", "")
-            execution_logs.append(f"ACTION: Deleting file \"{filename}\"")
-            res = delete_file(filename)
-            execution_logs.append(f"RESULT: {res['message']}")
-            if res["status"] == "clarify":
-                clarification_needed = {
-                    "question": res["message"],
-                    "context": "delete_file",
-                    "options": res.get("options", []),
-                }
-            if not speak_text:
-                speak_text = res["message"]
-            refresh_files = True
-            
-        elif act_type == "take_screenshot":
-            execution_logs.append("ACTION: Taking screenshot")
-            res = take_screenshot()
-            execution_logs.append(f"RESULT: {res['message']}")
-            refresh_files = True
-            
-        elif act_type == "show_stats":
-            execution_logs.append("ACTION: Loading HUD diagnostics...")
-            try:
-                stats = get_system_stats()
-                if isinstance(stats, dict) and "error" not in stats:
-                    procs = stats.get("processes", []) or []
-                    # Name the hungriest apps first so "what's running" gets a real answer.
-                    top = ", ".join(
-                        p.get("name", "?") for p in procs[:5] if p.get("name")
-                    ) or "no processes sampled"
-                    speak_text = (
-                        f"CPU at {stats.get('cpu', '?')} percent, memory at "
-                        f"{stats.get('memory', '?')} percent, disk at "
-                        f"{stats.get('disk', '?')} percent, sir. "
-                        f"Busiest applications: {top}."
-                    )
-                    execution_logs.append(f"RESULT: {speak_text}")
-                else:
-                    speak_text = "I couldn't sample the system stats, sir."
-            except Exception as exc:
-                speak_text = f"Diagnostics failed, sir: {exc}"
-                execution_logs.append(f"RESULT: {speak_text}")
-
-        elif act_type == "create_folder":
-            folder_name = action.get("folder_name", "")
-            execution_logs.append(f"ACTION: Creating directory \"{folder_name}\"")
-            res = create_folder(folder_name)
-            execution_logs.append(f"RESULT: {res['message']}")
-            refresh_files = True
-
-        elif act_type == "create_word_doc":
-            filename = action.get("filename", "")
-            content = action.get("content", "")
-            execution_logs.append(f"ACTION: Generating Word document \"{filename}\"")
-            res = create_word_document(filename, content)
-            execution_logs.append(f"RESULT: {res['message']}")
-            refresh_files = True
-
-        elif act_type == "check_pc_health":
-            execution_logs.append("ACTION: Performing system diagnosis health check")
-            res = check_pc_health()
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "volume_up":
-            execution_logs.append("ACTION: Increasing system volume")
-            res = adjust_volume("up")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "volume_down":
-            execution_logs.append("ACTION: Decreasing system volume")
-            res = adjust_volume("down")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "mute_volume":
-            execution_logs.append("ACTION: Toggling system mute")
-            res = adjust_volume("mute")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "play_pause":
-            execution_logs.append("ACTION: Toggling media playback")
-            res = media_control("play")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "next_track":
-            execution_logs.append("ACTION: Skipping media track")
-            res = media_control("next")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "prev_track":
-            execution_logs.append("ACTION: Playing previous media track")
-            res = media_control("prev")
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "search_web":
-            query = action.get("query", "")
-            execution_logs.append(f"ACTION: Searching web for \"{query}\"")
-            res = search_web(query)
-            execution_logs.append(f"RESULT: {res['message']}")
-            # Speak the short answer aloud when one was found (browser
-            # still opens for depth) — searching now answers, not just shows.
-            if res.get("status") == "success" and res.get("answer"):
-                speak_text = res["message"]
-
-        elif act_type == "generate_image":
-            img_prompt = action.get("prompt", "")
-            save_name = action.get("save_name", "")
-            execution_logs.append(f"ACTION: Generating image for \"{img_prompt}\"")
-            res = generate_image_huggingface(img_prompt, hf_key, save_name)
-            execution_logs.append(f"RESULT: {res['message']}")
-            if res["status"] == "success":
-                image_data = {
-                    "filename": res.get("filename", ""),
-                    "image_base64": res.get("image_base64", "")
-                }
-                refresh_files = True
-
-        elif act_type == "save_image":
-            save_name = action.get("save_name", "")
-            destination = action.get("destination", "desktop")
-            execution_logs.append(f"ACTION: Saving image as \"{save_name}\" to {destination}")
-            res = save_generated_image(save_name, destination)
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "clear_history":
-            import agent
-            agent.clear_history()
-            try:
-                from backend.agent import phase1_runtime
-                phase1_runtime.runtime.conversation.clear()
-            except Exception:
-                pass
-            execution_logs.append("ACTION: Cleared conversation history")
-
-        # --- Phone Control (ADB / scrcpy) -------------------------------
-        elif act_type == "phone_devices":
-            execution_logs.append("ACTION: Checking connected Android devices")
-            res = phone_control.list_devices()
-            execution_logs.append(f"RESULT: {res['message']}")
-            if not speak_text:
-                speak_text = res["message"]
-
-        elif act_type == "phone_mirror":
-            execution_logs.append("ACTION: Launching phone mirror (scrcpy)")
-            res = phone_control.start_mirror()
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "phone_screenshot":
-            execution_logs.append("ACTION: Capturing phone screenshot")
-            res = phone_control.screenshot_as_base64()
-            execution_logs.append(f"RESULT: {res['message']}")
-            if res["status"] == "success" and res.get("image_base64"):
-                image_data = {
-                    "filename": res.get("filename", ""),
-                    "image_base64": res.get("image_base64", "")
-                }
-
-        elif act_type == "phone_tap":
-            x = action.get("x", 0)
-            y = action.get("y", 0)
-            execution_logs.append(f"ACTION: Tapping phone at ({x}, {y})")
-            res = phone_control.tap(x, y)
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "phone_swipe":
-            x1, y1 = action.get("x1", 0), action.get("y1", 0)
-            x2, y2 = action.get("x2", 0), action.get("y2", 0)
-            duration_ms = int(action.get("duration_ms", 300))
-            execution_logs.append(f"ACTION: Swiping phone from ({x1},{y1}) to ({x2},{y2})")
-            res = phone_control.swipe(x1, y1, x2, y2, duration_ms)
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "phone_text":
-            text = action.get("text", "")
-            execution_logs.append("ACTION: Typing text on phone")
-            res = phone_control.input_text(text)
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "phone_key":
-            key = action.get("key", "")
-            execution_logs.append(f"ACTION: Sending key '{key}' to phone")
-            res = phone_control.press_key(key)
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "phone_launch_app":
-            package = action.get("package", "")
-            execution_logs.append(f"ACTION: Launching app '{package}' on phone")
-            res = phone_control.launch_app(package)
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "phone_unlock":
-            pin = action.get("pin")
-            execution_logs.append("ACTION: Unlocking phone")
-            res = phone_control.unlock_phone(pin)
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "phone_test_pin_tap":
-            digit = str(action.get("digit", ""))
-            execution_logs.append(f"ACTION: Test-tapping digit '{digit}' on phone PIN pad")
-            res = phone_control.test_pin_digit_tap(digit)
-            execution_logs.append(f"RESULT: {res['message']}")
-
-        elif act_type == "add_whatsapp_contact":
-            name = action.get("name", "")
-            phone = action.get("phone", "")
-            execution_logs.append(f"ACTION: Saving WhatsApp contact '{name}' ({phone})")
-            res = whatsapp_ops.add_contact(name, phone)
-            execution_logs.append(f"RESULT: {res['message']}")
-            if not speak_text:
-                speak_text = res["message"]
-
-        elif act_type == "ask_clarification":
-            question = action.get("question", "What would you like me to do, sir?")
-            context = action.get("context", "general")
-            options = action.get("options", [])
-            execution_logs.append(f"ACTION: Asking for clarification — {question}")
-            # Store clarification data to return to frontend
-            clarification_needed = {
-                "question": question,
-                "context": context,
-                "options": options,
-            }
-            speak_text = question  # Jarvis speaks the question too
-
-        elif act_type == "send_whatsapp":
-            contact = action.get("contact", "")
-            message = action.get("message", "")
-            execution_logs.append(f"ACTION: Sending WhatsApp message to '{contact}' (desktop)")
-            # Add progressive narration steps
-            narration_steps.append(f"Right away, sir. Opening WhatsApp and searching for {contact}.")
-            res = whatsapp_ops.send_whatsapp_message(contact, message)
-            execution_logs.append(f"RESULT: {res['message']}")
-            if res.get("status") == "success":
-                narration_steps.append(f"Message sent to {contact} on WhatsApp, sir. Done.")
-                speak_text = f"Done, sir. Message delivered to {contact} on WhatsApp."
-            else:
-                speak_text = res["message"]
-
-        elif act_type == "send_whatsapp_phone":
-            contact = action.get("contact", "")
-            message = action.get("message", "")
-            execution_logs.append(f"ACTION: Sending WhatsApp message to '{contact}' (phone)")
-            narration_steps.append(f"On it, sir. Sending via your phone to {contact}.")
-            res = whatsapp_ops.send_whatsapp_message_via_phone(contact, message)
-            execution_logs.append(f"RESULT: {res['message']}")
-            if res.get("status") == "success":
-                narration_steps.append(f"Message sent to {contact} via your phone, sir.")
-                speak_text = f"Done, sir. Message sent to {contact} from your phone."
-            else:
-                speak_text = res["message"]
-
-        elif act_type == "code_audit":
-            execution_logs.append("ACTION: Running complete read-only codebase self-audit")
-            audit_res = code_core.audit_codebase()
-            execution_logs.append(f"RESULT: Codebase audit finished. Health score: {audit_res['health_score']}% ({audit_res['issues_count']} issues found).")
-            if audit_res["issues_count"] == 0:
-                speak_text = f"Codebase audit complete, sir. All {audit_res['total_files_checked']} source files are completely healthy with zero syntax errors."
-            else:
-                speak_text = f"Audit complete, sir. I detected {audit_res['issues_count']} potential issues. I have not applied any modifications. You can review and approve fixes in the Code Core tab."
-
-        elif act_type == "code_fix":
-            target = action.get("target", "all")
-            execution_logs.append(f"ACTION: Applying safe patch and validation to: {target}")
-            if target in ["all", "errors", "issues"]:
-                audit_res = code_core.audit_codebase()
-                fixed_count = 0
-                failed_count = 0
-                for issue in audit_res.get("issues", []):
-                    fpath = issue["file"]
-                    try:
-                        preview = code_core.preview_file_fix(fpath, issue.get("message", ""))
-                    except code_core.NemotronUnavailableError as e:
-                        failed_count += 1
-                        execution_logs.append(f"RESULT: {fpath} skipped - Nemotron unavailable: {e}")
-                        continue
-                    if preview.get("status") == "success":
-                        try:
-                            app_res = code_core.apply_file_fix(fpath, preview["proposed_content"])
-                        except code_core.NemotronUnavailableError as e:
-                            failed_count += 1
-                            execution_logs.append(f"RESULT: {fpath} skipped - Nemotron unavailable during repair: {e}")
-                            continue
-                        if app_res.get("status") == "success":
-                            fixed_count += 1
-                            execution_logs.append(f"RESULT: Repaired {fpath} with validation verified.")
-                        else:
-                            failed_count += 1
-                    else:
-                        failed_count += 1
-                tail = f" {failed_count} could not be auto-fixed." if failed_count else ""
-                speak_text = f"Self-repair complete, sir. Successfully fixed and validated {fixed_count} files with automatic rollback safety enabled.{tail}"
-            else:
-                preview = code_core.preview_file_fix(target, action.get("issue", ""))
-                if preview.get("status") == "success":
-                    app_res = code_core.apply_file_fix(target, preview["proposed_content"])
-                    if app_res.get("status") == "success":
-                        speak_text = f"File {target} has been successfully repaired and validated, sir."
-                        execution_logs.append(f"RESULT: {app_res['message']}")
-                    else:
-                        speak_text = f"Could not safely apply fix to {target}. Automatic rollback was executed."
-                        execution_logs.append(f"RESULT: {app_res['message']}")
-                else:
-                    speak_text = f"Could not generate patch for {target}: {preview.get('message')}"
-
-        elif act_type == "code_test":
-            execution_logs.append("ACTION: Executing comprehensive self-validation suite")
-            audit_res = code_core.audit_codebase()
-            if audit_res["status"] == "healthy":
-                speak_text = "All system validation tests passed, sir. Python syntax, AST trees, and frontend builds are nominal."
-            else:
-                speak_text = f"Validation completed with warnings, sir. {audit_res['issues_count']} warnings detected."
-            execution_logs.append(f"RESULT: Self-validation finished. Health Score: {audit_res['health_score']}%.")
-
-        else:
-            execution_logs.append(f"ACTION: Unknown command type \"{act_type}\"")
-            execution_logs.append(
-                f"RESULT: Skipped — no handler for \"{act_type}\".")
-            if not speak_text:
-                speak_text = (
-                    "I understood the words, sir, but that particular trick "
-                    "isn't wired up yet.")
-    # Default fallback if no voice response was generated
-    if not speak_text:
-        speak_text = "I have completed your request, sir."
-
-    # ── Human polish: make every reply sound like a real human butler ──
-    # Facts (times, temps, paths, mail bodies) are preserved verbatim;
-    # only the framing gets warmed up. Never breaks the reply.
+    # --- Smalltalk (no tools needed) ---
     try:
         from backend.agent import human_replies as _hr
-        # Smalltalk first (hi / thanks / morning…) — no tools needed.
         _small = _hr.smalltalk(req.prompt)
-        # Last non-speak action decides the human category; its RESULT
-        # message carries the facts. Gemini's speak is the personality.
-        _gemini_speak = ""
-        _last_tool = ""
-        _last_result = ""
-        try:
-            for _a in (actions or []):
-                if isinstance(_a, dict) and _a.get("type") == "speak" and not _gemini_speak:
-                    _gemini_speak = str(_a.get("text", "") or "")
-        except Exception:
-            pass
-        # Internal-only statuses must NEVER reach the spoken reply
-        # (this is what once leaked "Memory stored (success)" into chat).
-        _INTERNAL_RESULTS = ("memory stored", "memory store failed",
-                             "memory saved", "action: skipping")
-        try:
-            for _line in reversed(execution_logs or []):
-                if isinstance(_line, str) and _line.startswith("RESULT:"):
-                    _cand = _line[len("RESULT:"):].strip()
-                    if _cand.casefold().startswith(_INTERNAL_RESULTS):
-                        continue
-                    _last_result = _cand
-                    break
-        except Exception:
-            pass
-        try:
-            for _a in reversed(actions or []):
-                if isinstance(_a, dict) and _a.get("type") not in ("speak", "unknown"):
-                    _last_tool = str(_a.get("type", "") or "")
-                    break
-        except Exception:
-            pass
-        if _small and not _last_tool:
+        if _small:
             speak_text = _small
-        elif clarification_needed:
-            # Questions to the user stay exactly as asked (plus gentle frame).
-            pass
-        else:
-            speak_text = _hr.humanize_normal(_last_tool, _gemini_speak or speak_text, _last_result or speak_text, req.prompt)
+            execution_logs.append("SMALLTALK: Answered without tools")
+            return _base_response()
     except Exception:
         pass
 
-    # Confirm freshly stored identity facts (once — never stacked twice).
-    try:
-        if _memory_note and _memory_note.casefold() not in (speak_text or "").casefold():
-            speak_text = f"{_memory_note} {speak_text}".strip()
-    except Exception:
-        pass
-
-    # Collect extra structured data for the frontend
-    timer_data = None
-    weather_data_out = None
-    for action in actions:
-        if isinstance(action, dict) and action.get("type") == "set_timer":
-            try:
-                timer_data = {
-                    "seconds": int(action.get("seconds", 60)),
-                    "label": action.get("label", "Timer")
-                }
-            except Exception:
-                timer_data = {"seconds": 60, "label": "Timer"}
-        if isinstance(action, dict) and action.get("type") == "weather":
-            city = action.get("city", "London")
-            # Already fetched above; grab from last weather result if available
-        
-    try:
-        from backend.agent.lang_detect import detect_lang
-        speak_lang = detect_lang(speak_text, req.prompt)
-    except Exception:
-        speak_lang = "en"
-    return {
-        "speak": speak_text,
-        "speak_lang": speak_lang,
-        "logs": execution_logs,
-        "file_data": file_data,
-        "refresh_files": refresh_files,
-        "image_data": image_data,
-        "timer_data": timer_data,
-        "clarification_needed": clarification_needed,
-        "narration_steps": narration_steps,
-    }
+    # --- Default: be explicit, never fake it ---
+    execution_logs.append("RESULT: No deterministic handler matched")
+    speak_text = ("I cannot handle that directly, sir. I can still handle time, "
+                  "system stats, battery, network, weather, calculations, "
+                  "volume, media, screenshots, notes, todos, reminders and "
+                  "scheduled messages directly.")
+    return _base_response()
 
 
 # ── Gallery endpoints ─────────────────────────────────────────────────────────
@@ -2596,168 +2196,6 @@ def serve_work_file(path: str):
     }
     media_type = mime_map.get(ext, "application/octet-stream")
     return FileResponse(full_path, media_type=media_type)
-
-
-# ── Agent endpoints ───────────────────────────────────────────────────────
-# Each task owns its state and tools. Sharing an Executor also shares its
-# Playwright browser, which lets concurrent tasks corrupt each other.
-agent_runs = {}
-
-
-class AgentRunRequest(BaseModel):
-    text: str
-    apiKey: Optional[str] = None
-
-
-@app.post("/api/agent/run")
-async def agent_run(req: AgentRunRequest):
-    """
-    Real Agent Mode endpoint — SSE streaming.
-    Runs the full AgentCore loop and emits live execution events to the frontend.
-    Each SSE line: data: {json}\n\n
-    """
-    task = req.text.strip()
-    if not task:
-        raise HTTPException(status_code=400, detail="Task cannot be empty.")
-
-    # Create a per-request event queue
-    event_queue: asyncio.Queue = asyncio.Queue()
-    state = TaskState()
-    run_id = str(uuid.uuid4())
-    core = AgentCore()
-    agent_runs[run_id] = {"state": state, "core": core, "task": task}
-
-    async def run_agent():
-        """Run agent in background, putting results into the queue."""
-        try:
-            await event_queue.put({
-                "type": "run_started", "message": "Agent run started", "icon": ">",
-                "data": {"run_id": run_id}, "ts": __import__('time').time()
-            })
-            await core.process(task, state, event_queue)
-        except Exception as e:
-            await event_queue.put({
-                "type": "error",
-                "message": f"Agent error: {str(e)}",
-                "icon": "✗",
-                "data": {"error": str(e)},
-                "ts": __import__('time').time()
-            })
-        finally:
-            # A human-blocked run must remain addressable by /resume. Finished
-            # runs are removed promptly and their browser is closed by AgentCore.
-            if not state.waiting_for_user:
-                agent_runs.pop(run_id, None)
-            # Sentinel to signal end of stream
-            await event_queue.put(None)
-
-    async def event_generator():
-        """Consume the event queue and yield SSE-formatted strings."""
-        # Start the agent task
-        agent_task = asyncio.create_task(run_agent())
-        try:
-            while True:
-                try:
-                    event = await asyncio.wait_for(event_queue.get(), timeout=120.0)
-                except asyncio.TimeoutError:
-                    yield "data: " + json.dumps({"type": "error", "message": "Agent timed out", "icon": "✗"}) + "\n\n"
-                    break
-
-                if event is None:
-                    # End of stream sentinel
-                    yield "data: " + json.dumps({"type": "done", "message": "Stream complete"}) + "\n\n"
-                    break
-
-                yield "data: " + json.dumps(event) + "\n\n"
-        finally:
-            if not agent_task.done():
-                agent_task.cancel()
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        }
-    )
-
-
-@app.post("/api/agent/execute")
-async def agent_execute(req: dict):
-    """Execute a natural language task through the agent core (non-streaming legacy)."""
-    task = req.get("text", "")
-    state = TaskState()
-    result = await AgentCore().process(task, state)
-    return {"status": result.get("status", "error"), "data": result}
-
-
-@app.get("/api/agent/status")
-async def agent_status(run_id: str = ""):
-    """Get status for an active agent run."""
-    run = agent_runs.get(run_id)
-    state = run["state"] if run else TaskState()
-    return {
-        "run_id": run_id,
-        "active": bool(run),
-        "task": state.task,
-        "completed_steps": state.completed_steps,
-        "errors": state.errors,
-        "retry_count": state.retry_count,
-        "completion_status": state.completion_status
-    }
-
-
-@app.post("/api/agent/plan")
-async def agent_plan(req: dict):
-    """Generate a plan for a task."""
-    task = req.get("text", "")
-    state = TaskState()
-    from backend.agent.planner import Planner
-    planner = Planner()
-    steps = planner.plan_task(task, state)
-    return {"status": "success", "steps": [{"type": s.type, "description": s.description, "parameters": s.parameters} for s in steps], "task": task}
-
-
-@app.post("/api/agent/resume")
-async def agent_resume(req: dict):
-    """Resume agent after human intervention."""
-    run_id = req.get("run_id", "")
-    run = agent_runs.get(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="No paused agent run found for this run_id.")
-    state = run["state"]
-    if not state.waiting_for_user:
-        raise HTTPException(status_code=409, detail="This agent run is not waiting for human intervention.")
-    result = await run["core"].resume_after_human(state, req.get("resolution", {}))
-    return {"status": "success", "run_id": run_id, "data": result}
-
-
-@app.post("/api/agent/instruct")
-async def agent_instruct(req: dict):
-    """Send a new command to a running agent: related changes merge into
-    the live plan (restart from the top); independent work is queued next.
-    Interruptions ("stop", "cancel") halt the run."""
-    from backend.agent.clarify import is_interruption
-    run_id = req.get("run_id", "")
-    text = (req.get("text", "") or "").strip()
-    run = agent_runs.get(run_id)
-    if not run:
-        raise HTTPException(status_code=404, detail="No active agent run found for this run_id.")
-    if not text:
-        raise HTTPException(status_code=400, detail="Instruction text is empty.")
-    core, state = run["core"], run["state"]
-    if is_interruption(text):
-        core.request_interrupt(f"User interruption: {text}")
-        return {"status": "interrupted", "run_id": run_id,
-                "speak": "Stopping, sir."}
-    verdict = core.enqueue_instruction(text, getattr(state, "task", ""))
-    return {"status": verdict["verdict"], "run_id": run_id,
-            "speak": verdict["message"],
-            "queued": list(getattr(state, "queued_tasks", []) or [])}
-
-
-# ── Agent endpoints end ───────────────────────────────────────────────────
 
 
 if __name__ == "__main__":

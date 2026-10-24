@@ -1,11 +1,11 @@
 """
-jarvis_watchdog.py — Standalone Process Supervisor & Crash Recovery Daemon for J.A.R.V.I.S.
+nexus_watchdog.py — Standalone Process Supervisor & Crash Recovery Daemon for N.E.X.U.S.
 ========================================================================================
 STANDALONE ARCHITECTURE:
 - Runs as an independent supervisor process wrapping main.py.
 - Zero dependency on FastAPI/Uvicorn — pure standard library.
 - Monitors backend health via process status AND HTTP polling on /api/status.
-- On crash OR unhealthy HTTP state: captures stderr/traceback -> invokes recovery_engine.py -> restarts JARVIS.
+- On crash OR unhealthy HTTP state: captures stderr/traceback -> invokes recovery_engine.py -> restarts NEXUS.
 - Prevents infinite restart loops with MAX_CRASH_RECOVERIES limit.
 """
 
@@ -65,7 +65,7 @@ def log(msg: str):
         pass
 
 
-class JarvisSupervisor:
+class NexusSupervisor:
     def __init__(self, main_script: str = "main.py"):
         self.main_script = main_script
         self.process = None
@@ -86,7 +86,7 @@ class JarvisSupervisor:
                 target_deque.append(clean_line)
                 # Print child logs to watchdog console
                 if clean_line.strip():
-                    print(f"[JARVIS] {clean_line}")
+                    print(f"[NEXUS] {clean_line}")
         except Exception:
             pass
         finally:
@@ -95,9 +95,9 @@ class JarvisSupervisor:
             except Exception:
                 pass
 
-    def start_jarvis(self) -> subprocess.Popen:
+    def start_nexus(self) -> subprocess.Popen:
         """Launch main.py as a subprocess."""
-        log(f"Starting J.A.R.V.I.S. Core backend ({self.main_script})...")
+        log(f"Starting N.E.X.U.S. Core backend ({self.main_script})...")
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         
@@ -130,7 +130,7 @@ class JarvisSupervisor:
         t_err.start()
         self._reader_threads.extend([t_out, t_err])
 
-        log(f"J.A.R.V.I.S. PID: {self.process.pid}")
+        log(f"N.E.X.U.S. PID: {self.process.pid}")
         self.process_start_time = time.time()
         self.consecutive_health_failures = 0
         return self.process
@@ -252,7 +252,7 @@ class JarvisSupervisor:
                    f"{CRASH_LOG}. Restarting into a fresh process.")
             log(msg)
             print("\n" + "!" * 65)
-            print(f" [WATCHDOG] J.A.R.V.I.S. NATIVE CRASH (Incident #{self.recovery_count})")
+            print(f" [WATCHDOG] N.E.X.U.S. NATIVE CRASH (Incident #{self.recovery_count})")
             print(f" [WATCHDOG] Cause: {name}, exit code {exit_code}")
             print("!" * 65 + "\n")
             try:
@@ -267,7 +267,7 @@ class JarvisSupervisor:
             if self.recovery_count > MAX_CRASH_RECOVERIES:
                 log(f"Max recovery limit ({MAX_CRASH_RECOVERIES}) reached. Halting auto-recovery.")
                 return False
-            log("Restarting J.A.R.V.I.S. backend in a fresh process.")
+            log("Restarting N.E.X.U.S. backend in a fresh process.")
             return True
 
         # Diagnostic summary
@@ -277,7 +277,7 @@ class JarvisSupervisor:
         t_err = parsed.get("error")
 
         print("\n" + "!"*65)
-        print(f" [WATCHDOG] J.A.R.V.I.S. CRASH DETECTED (Incident #{self.recovery_count})")
+        print(f" [WATCHDOG] N.E.X.U.S. CRASH DETECTED (Incident #{self.recovery_count})")
         if t_file:
             print(f" [WATCHDOG] Failing File: {os.path.basename(t_file)}")
             print(f" [WATCHDOG] Error Line:   Line {t_line}")
@@ -329,7 +329,7 @@ class JarvisSupervisor:
                         token=self._crash_token)
                 except Exception as e:
                     log(f"Fix-summary step failed (non-fatal): {e}")
-                log("Repair complete — auto-restarting J.A.R.V.I.S. backend.")
+                log("Repair complete — auto-restarting N.E.X.U.S. backend.")
                 return True
             log(f"Visible repair unavailable/failed ({visible.get('message')}) — "
                 f"falling back to headless recovery.")
@@ -355,7 +355,7 @@ class JarvisSupervisor:
                     token=getattr(self, "_crash_token", None))
             except Exception as e:
                 log(f"Fix-summary step failed (non-fatal): {e}")
-            log("Repair complete — auto-restarting J.A.R.V.I.S. backend.")
+            log("Repair complete — auto-restarting N.E.X.U.S. backend.")
             return True
         elif result.get("status") == "unhealthy_backend":
             # Backend became unhealthy (health check failures) but no code crash detected.
@@ -412,7 +412,7 @@ class JarvisSupervisor:
                     token=None)
             except Exception as e:
                 log(f"Fix-summary step failed (non-fatal): {e}")
-            log("Repair complete — auto-restarting J.A.R.V.I.S. backend.")
+            log("Repair complete — auto-restarting N.E.X.U.S. backend.")
             return True
         elif result.get("status") == "unhealthy_backend":
             # Backend became unhealthy (health check failures) but no code crash detected.
@@ -426,7 +426,7 @@ class JarvisSupervisor:
     def run(self, test_mode: bool = False):
         """Main supervision loop."""
         log("==================================================")
-        log("J.A.R.V.I.S. Watchdog Daemon Initialized")
+        log("N.E.X.U.S. Watchdog Daemon Initialized")
         log("==================================================")
 
         if test_mode:
@@ -434,7 +434,7 @@ class JarvisSupervisor:
             return
 
         while self.running:
-            self.start_jarvis()
+            self.start_nexus()
             
             # Initial grace period for boot
             time.sleep(3)
@@ -444,7 +444,7 @@ class JarvisSupervisor:
                 ret_code = self.process.poll()
                 if ret_code is not None:
                     # Process exited
-                    log(f"JARVIS backend terminated unexpectedly with exit code {ret_code}.")
+                    log(f"NEXUS backend terminated unexpectedly with exit code {ret_code}.")
                     should_restart = self.handle_crash(exit_code=ret_code)
                     if should_restart:
                         break  # Break inner loop to restart
@@ -482,7 +482,7 @@ class JarvisSupervisor:
         """Terminate child process gracefully."""
         self.running = False
         if self.process and self.process.poll() is None:
-            log("Stopping J.A.R.V.I.S. child process...")
+            log("Stopping N.E.X.U.S. child process...")
             try:
                 self.process.terminate()
                 self.process.wait(timeout=4)
@@ -493,7 +493,7 @@ class JarvisSupervisor:
 
 if __name__ == "__main__":
     test_mode = "--test-mode" in sys.argv
-    supervisor = JarvisSupervisor()
+    supervisor = NexusSupervisor()
 
     def sig_handler(sig, frame):
         log("Received shutdown signal.")

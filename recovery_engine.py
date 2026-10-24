@@ -1,11 +1,11 @@
 """
-recovery_engine.py — Independent Self-Healing & Crash Recovery Module for J.A.R.V.I.S.
+recovery_engine.py — Independent Crash Recovery Module for N.E.X.U.S.
 ====================================================================================
 STANDALONE ARCHITECTURE:
 - Zero dependency on main.py, agent.py, or any third-party framework (uses only Python standard library).
 - Reads config.json directly for Nemotron (NVIDIA NIM) credentials.
 - Safe Patch Workflow: Backup -> Nemotron Diagnostic -> Apply Minimal Patch -> Validate (py_compile) -> Auto-Rollback on failure.
-- NO GEMINI FALLBACK for self-healing. Nemotron failures are logged, retried (limited), then escalated to human.
+- NO GEMINI FALLBACK for crash recovery. Nemotron failures are logged, retried (limited), then escalated to human.
 """
 
 import os
@@ -29,11 +29,11 @@ PROTECTED_FILES = {
 BACKUP_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".backup")
 WORKSPACE_ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# Self-healing configuration (can be overridden by config.json)
+# Recovery configuration (can be overridden by config.json)
 MAX_NEMOTRON_RETRIES = 3
 NEMOTRON_RETRY_BACKOFF = 5  # seconds
 # Nemotron NIM streams full-file rewrites slowly (~9 tok/s). 60-90s timeouts are too
-# short for real self-healing patches; default 240s, configurable via config.json.
+# short for real recovery patches; default 240s, configurable via config.json.
 NEMOTRON_REQUEST_TIMEOUT = 240  # seconds per request
 NEMOTRON_MAX_OUTPUT_TOKENS = 16384  # output budget per request (gateway-safe ceiling)
 NEED_HUMAN_NOTIFICATION = True
@@ -111,13 +111,13 @@ def log_recovery_event(event_type: str, message: str, details: dict = None):
 def call_nemotron(prompt: str, system_prompt: str = "", model: str = None) -> str:
     """Query Nemotron (via NVIDIA NIM API) using standard urllib.
     
-    This is the DEDICATED self-healing engine. NO GEMINI FALLBACK.
+    This is the DEDICATED crash-recovery engine. NO GEMINI FALLBACK.
     On failure: retry with backoff, log failure, notify human.
     """
     config = load_config()
     api_key = config.get("nvidia_api_key", "").strip() or os.environ.get("NVIDIA_API_KEY", "").strip()
     if not api_key:
-        error_msg = "Nemotron (NVIDIA NIM) API key not configured in config.json. Self-healing cannot proceed."
+        error_msg = "Nemotron (NVIDIA NIM) API key not configured in config.json. Recovery cannot proceed."
         log_recovery_event("NEMOTRON_CONFIG_ERROR", error_msg, {"has_nvidia_key": False})
         raise RuntimeError(error_msg)
 
@@ -206,12 +206,12 @@ def call_nemotron(prompt: str, system_prompt: str = "", model: str = None) -> st
 
 
 def notify_human_self_healing_failed(error_message: str):
-    """Notify human operator that self-healing could not complete."""
+    """Notify human operator that crash recovery could not complete."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     notification = (
         f"\n{'='*60}\n"
         f"[HUMAN NOTIFICATION] {timestamp}\n"
-        f"J.A.R.V.I.S. Self-Healing Engine (Nemotron) could not complete recovery.\n"
+        f"N.E.X.U.S. Recovery Engine (Nemotron) could not complete recovery.\n"
         f"Error: {error_message}\n"
         f"Action Required: Manual intervention needed.\n"
         f"Check recovery.log and watchdog_crash.log for details.\n"
@@ -228,12 +228,12 @@ def notify_human_self_healing_failed(error_message: str):
         pass
 
 
-# REMOVED: call_gemini_fallback() - Self-healing must NOT fall back to Gemini.
-# Gemini is for NORMAL JARVIS OPERATIONS ONLY.
+# Design note: crash recovery uses Nemotron only, never Gemini.
+# Gemini is for NORMAL NEXUS OPERATIONS ONLY.
 
 
 def is_protected(filepath: str) -> bool:
-    """Check if target file is blacklisted from autonomous modifications."""
+    """Check if target file is blacklisted from automatic modifications."""
     norm = os.path.normpath(filepath).replace("\\", "/")
     basename = os.path.basename(norm)
     if basename in PROTECTED_FILES:
@@ -650,7 +650,7 @@ def _repair_via_opencode(target_file: str, target_line: int,
     tail = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip().splitlines()
     tail_txt = " | ".join(tail[-3:])[:300] if tail else ""
     # Audit trail: full prompt + transcript per attempt, next to the crash
-    # summaries, so the user can see exactly what the agent was told and did.
+    # summaries, so the user can see exactly what the repair session was told and did.
     try:
         crash_dir = os.path.join(WORKSPACE_ROOT, "STARTUP CRASH")
         os.makedirs(crash_dir, exist_ok=True)
@@ -689,7 +689,7 @@ def _repair_window_attempt(target_file: str, target_line: int, error_msg: str, t
     window_snippet = "".join(lines[start_idx:end_idx])
 
     system_prompt = (
-        "You are an expert Python systems recovery engineer for J.A.R.V.I.S.\n"
+        "You are an expert Python systems recovery engineer for N.E.X.U.S.\n"
         "Your task: Fix the specific crash/syntax error inside the provided code snippet.\n"
         "CRITICAL RULES:\n"
         f"1. Output ONLY the corrected replacement code for lines {start_idx + 1} to {end_idx}.\n"
@@ -760,7 +760,7 @@ def recover_from_crash(crash_log_path: str, max_retries: int = 3,
         workspace_dir = os.path.dirname(os.path.abspath(__file__))
         core_files = [
             "main.py", "agent.py", "system_ops.py", "code_core.py",
-            "recovery_engine.py", "jarvis_watchdog.py", "phone_control.py"
+            "recovery_engine.py", "nexus_watchdog.py", "phone_control.py"
         ]
         for cf in core_files:
             cfp = os.path.join(workspace_dir, cf)
@@ -802,7 +802,7 @@ def recover_from_crash(crash_log_path: str, max_retries: int = 3,
         }
 
     print(f"\n[RECOVERY] ========================================")
-    print(f"[RECOVERY] Initiating autonomous recovery on: {os.path.basename(target_file)}")
+    print(f"[RECOVERY] Initiating assisted recovery on: {os.path.basename(target_file)}")
     print(f"[RECOVERY] Error: {error_summary} (Line {target_line})")
     print(f"[RECOVERY] Mode: {'in-place repair' if in_place else 'COPY-ONLY repair (original untouched)'}")
     print(f"[RECOVERY] ========================================")
@@ -927,16 +927,16 @@ def recover_from_crash(crash_log_path: str, max_retries: int = 3,
                 else:
                     current_error = val_msg
         except RuntimeError as e:
-            print(f"\n[RECOVERY] Nemotron self-healing engine unavailable: {e}")
+            print(f"\n[RECOVERY] Nemotron recovery engine unavailable: {e}")
             log_recovery_event("RECOVERY_NEMOTRON_UNAVAILABLE", str(e))
             if in_place and backup_path:
                 restore_backup(backup_path, target_file)
-                msg = "Nemotron self-healing engine unavailable after retries. Rolled back safely."
+                msg = "Nemotron recovery engine unavailable after retries. Rolled back safely."
             elif in_place:
-                msg = "Nemotron self-healing engine unavailable after retries. No backup was kept (make_backup=False)."
+                msg = "Nemotron recovery engine unavailable after retries. No backup was kept (make_backup=False)."
             else:
                 _discard_work_copy()
-                msg = "Nemotron self-healing engine unavailable after retries. Original file was NOT modified."
+                msg = "Nemotron recovery engine unavailable after retries. Original file was NOT modified."
             return {
                 "status": "nemotron_unavailable",
                 "file": target_file,
@@ -950,7 +950,7 @@ def recover_from_crash(crash_log_path: str, max_retries: int = 3,
     # Fallback to full-file repair if surgical passes failed
     print(f"\n[RECOVERY] Surgical repair exhausted. Falling back to whole-file repair...")
     system_prompt = (
-        "You are an expert Python systems recovery engineer for J.A.R.V.I.S.\n"
+        "You are an expert Python systems recovery engineer for N.E.X.U.S.\n"
         "Your task: Fix the provided code file to resolve the specific crash/traceback error.\n"
         "RULES:\n"
         "1. Make ONLY the minimal necessary corrections to fix the bug.\n"
@@ -1034,11 +1034,11 @@ def recover_from_crash(crash_log_path: str, max_retries: int = 3,
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--check":
-        print("[RECOVERY] Recovery Engine (Nemotron Self-Healing) is operational and ready.")
+        print("[RECOVERY] Recovery Engine (Nemotron Recovery) is operational and ready.")
         cfg = load_config()
         has_nemotron = bool(cfg.get("nvidia_api_key"))
         print(f"[RECOVERY] Nemotron (NVIDIA NIM) configured: {has_nemotron} (Model: {cfg.get('nvidia_model', 'z-ai/glm-5.3-flash')})")
-        print(f"[RECOVERY] Gemini fallback for self-healing: DISABLED (by design)")
+        print(f"[RECOVERY] Gemini fallback for crash recovery: DISABLED (by design)")
         print(f"[RECOVERY] Max Nemotron retries: {MAX_NEMOTRON_RETRIES}")
         print(f"[RECOVERY] Retry backoff: {NEMOTRON_RETRY_BACKOFF}s (exponential)")
     elif len(sys.argv) > 2 and sys.argv[1] == "--recover":

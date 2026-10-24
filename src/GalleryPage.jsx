@@ -103,7 +103,7 @@ export default function GalleryPage({ setActiveView }) {
       {/* ── Top bar ── */}
       <div className="fp-topbar">
         <button className="fp-back-btn" onClick={() => setActiveView('core')}>
-          <ArrowLeft size={14} /> BACK TO JARVIS
+          <ArrowLeft size={14} /> BACK TO NEXUS
         </button>
         <div className="fp-title">
           <Images size={16} style={{ color: 'var(--cyan)' }} />

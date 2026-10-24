@@ -1,6 +1,6 @@
 """whatsapp_ops.py
 ----------------
-WhatsApp automation for J.A.R.V.I.S.
+WhatsApp automation for N.E.X.U.S.
 
 Provides reliable desktop and phone messaging with UI Automation,
 contact search, composer focus, message typing, send verification,
@@ -299,7 +299,7 @@ def _type_and_send_message(message: str, display_name: str, auto_send: bool = Tr
 def add_contact(name: str, phone: str) -> Dict[str, Any]:
     return {
         "status": "error",
-        "message": "JARVIS no longer stores WhatsApp contacts locally. WhatsApp's own contacts are searched directly.",
+        "message": "NEXUS no longer stores WhatsApp contacts locally. WhatsApp's own contacts are searched directly.",
     }
 
 
@@ -307,14 +307,14 @@ def list_contacts() -> Dict[str, Any]:
     return {
         "status": "success",
         "contacts": [],
-        "message": "JARVIS has no local WhatsApp contact book. WhatsApp is the contact source.",
+        "message": "NEXUS has no local WhatsApp contact book. WhatsApp is the contact source.",
     }
 
 
 def delete_contact(name: str) -> Dict[str, Any]:
     return {
         "status": "error",
-        "message": "There is no local JARVIS WhatsApp contact book to delete from, sir.",
+        "message": "There is no local NEXUS WhatsApp contact book to delete from, sir.",
     }
 
 

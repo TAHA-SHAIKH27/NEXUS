@@ -1,11 +1,11 @@
 """
 google_oauth.py
 ----------------
-Adds Google OAuth 2.0 (installed-app / desktop flow) support so J.A.R.V.I.S.
+Adds Google OAuth 2.0 (installed-app / desktop flow) support so N.E.X.U.S.
 can call the Gemini API using a linked Google account instead of a raw
 API key.
 
-SETUP (one-time, done by the user - not by Jarvis):
+SETUP (one-time, done by the user - not by Nexus):
 1. Go to https://console.cloud.google.com/ -> create/select a project.
 2. Enable the "Generative Language API".
 3. Configure the OAuth consent screen (External is fine for personal use;

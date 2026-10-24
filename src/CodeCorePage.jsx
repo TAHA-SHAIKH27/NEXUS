@@ -28,7 +28,7 @@ export default function CodeCorePage({ setActiveView }) {
 
   const fallbackFiles = [
     'main.py', 'agent.py', 'system_ops.py', 'phone_control.py',
-    'backend/agent/core.py', 'backend/agent/executor.py', 'src/App.jsx', 'src/CoreSphere.jsx'
+    'code_core.py', 'recovery_engine.py', 'src/App.jsx', 'src/CoreSphere.jsx'
   ];
   const issueFiles = new Set((auditData?.issues || []).map(issue => issue.file));
   const scannedFiles = auditData?.files?.length ? auditData.files : fallbackFiles;
@@ -177,7 +177,7 @@ export default function CodeCorePage({ setActiveView }) {
           </button>
           <div className="codecore-title">
             <Terminal size={20} className="codecore-icon" />
-            <span>CODE CORE // AUTONOMOUS DEVELOPER ENGINE</span>
+            <span>CODE CORE // DEVELOPER ENGINE</span>
           </div>
         </div>
 
@@ -194,9 +194,9 @@ export default function CodeCorePage({ setActiveView }) {
         </div>
       </div>
 
-      {/* Autonomous scan workspace */}
+      {/* Scan workspace */}
       <section className="codecore-scan-console">
-        <div className="scan-console-topline"><span><Cpu size={14} /> SELF-HEALING ENGINE // LIVE SOURCE INSPECTOR</span><span className="scan-phase">{scanPhase}</span></div>
+        <div className="scan-console-topline"><span><Cpu size={14} /> REPAIR ENGINE // LIVE SOURCE INSPECTOR</span><span className="scan-phase">{scanPhase}</span></div>
         <div className="scan-console-grid">
           <div className="scan-progress-orb"><div className="scan-orb-ring"><span>{scanProgress}%</span></div><small>CODEBASE SCAN</small></div>
           <div className="scan-progress-main"><div className="scan-progress-heading"><strong>{auditing ? 'Analyzing source integrity' : auditData ? 'Source integrity mapped' : 'Ready to inspect source'}</strong><span>{scannedFiles.length} FILE NODES</span></div><div className="scan-track"><span style={{ width: `${scanProgress}%` }} /></div><div className="scan-progress-meta"><span>NODE COVERAGE {scanProgress}%</span><span>{auditData?.issues_count || 0} ANOMALIES</span><span>HEALTH {auditData?.health_score ?? '--'}%</span></div></div>
@@ -213,8 +213,8 @@ export default function CodeCorePage({ setActiveView }) {
           
           {/* Health Summary Card */}
           <div className="codecore-card health-card">
-            <div className="card-header"><span className="card-title">AUTONOMOUS CORE STATUS</span><span className="engine-chip"><Zap size={11} /> SELF-HEALING</span></div>
-            <div className="engine-status-copy"><strong>{auditing ? 'JARVIS is tracing its own execution surface.' : auditData ? 'No source node is outside the repair perimeter.' : 'Initialize a source scan to begin.'}</strong><span>Every file node is indexed, scored, and queued for safe repair before a patch can be applied.</span></div>
+            <div className="card-header"><span className="card-title">CORE STATUS</span><span className="engine-chip"><Zap size={11} /> GUIDED REPAIR</span></div>
+            <div className="engine-status-copy"><strong>{auditing ? 'NEXUS is tracing its own execution surface.' : auditData ? 'No source node is outside the repair perimeter.' : 'Initialize a source scan to begin.'}</strong><span>Every file node is indexed, scored, and queued for safe repair before a patch can be applied.</span></div>
           </div>
           <div className="codecore-card activity-card">
             <div className="card-header"><span className="card-title">CORE ACTIVITY STREAM</span><History size={14} /></div>
@@ -354,7 +354,7 @@ export default function CodeCorePage({ setActiveView }) {
             </div>
 
             <p className="card-subtext">
-              Upload any broken script or code file. JARVIS will analyze errors, apply fixes, and provide a downloadable corrected version.
+              Upload any broken script or code file. NEXUS will analyze errors, apply fixes, and provide a downloadable corrected version.
             </p>
 
             <div className="upload-input-wrap">
