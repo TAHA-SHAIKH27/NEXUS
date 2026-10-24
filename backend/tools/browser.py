@@ -1,0 +1,1514 @@
+"""
+Playwright browser control with persistent context and intelligent page state detection.
+headless=False so the user sees it. Detects CAPTCHA, consent, sorry pages, etc.
+"""
+import asyncio
+import os
+import time
+import re
+import shutil
+import tempfile
+import urllib.parse
+from typing import Any, Dict, List, Optional
+from dataclasses import dataclass
+from enum import Enum
+
+from playwright.async_api import async_playwright, BrowserContext, Page
+
+from backend.tools.result_schema import create_browser_result, SearchResult, ExtractedSource
+
+
+class BrowserPageState(Enum):
+    """Detected state of the browser page after navigation/search."""
+    NORMAL_SERP = "normal_serp"
+    CAPTCHA = "captcha"
+    CONSENT = "consent"
+    SORRY_PAGE = "sorry_page"
+    NETWORK_ERROR = "network_error"
+    EMPTY_RESULTS = "empty_results"
+    NAVIGATION_PENDING = "navigation_pending"
+    UNKNOWN = "unknown"
+
+
+@dataclass
+class PageStateResult:
+    """Structured result of page state detection."""
+    state: BrowserPageState
+    verified: bool
+    message: str
+    details: Dict[str, Any]
+
+
+def unwrap_search_url(url: str) -> str:
+    """Unwrap search-engine redirect URLs to the real destination.
+
+    Search results often contain wrappers (Google Scholar `scholar_url?url=`,
+    Google `/url?q=`, Bing `ck/a?...&u=`, DuckDuckGo `l/?uddg=`) instead of
+    the destination. Navigating the wrapper works (it redirects), but
+    verification then compares the landed URL against the wrapper and
+    wrongly reports a mismatch. Unwrapping first fixes both: fewer hops
+    and a comparable URL. Unknown formats pass through unchanged.
+    """
+    if not url:
+        return url
+    try:
+        parts = urllib.parse.urlsplit(url)
+        if not parts.query:
+            return url
+        params = urllib.parse.parse_qs(parts.query)
+        for key in ("url", "q", "uddg", "u"):
+            for raw in params.get(key, []):
+                candidate = urllib.parse.unquote(raw).strip()
+                if candidate.startswith(("http://", "https://")):
+                    return candidate
+                if key == "u":
+                    # Bing encodes the destination (base64, sometimes padded).
+                    try:
+                        padded = candidate + "=" * (-len(candidate) % 4)
+                        decoded = __import__("base64").urlsafe_b64decode(padded).decode("utf-8", errors="strict").strip()
+                        if decoded.startswith(("http://", "https://")):
+                            return decoded
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return url
+
+
+class Browser:
+    """Playwright browser control with persistent user profile to avoid CAPTCHAs."""
+
+    def __init__(self):
+        self.playwright = None
+        self.context = None
+        self.page = None
+        self._temporary_profile = None
+
+    async def start(self):
+        """Initialize Playwright browser with persistent user profile to avoid CAPTCHAs."""
+        self.playwright = await async_playwright().start()
+
+        # Use persistent context with user data dir — reuses Chrome profile (cookies, logins)
+        user_data_dir = os.path.join(os.path.expanduser("~"), "AppData", "Local", "NEXUS", "browser_profile")
+        os.makedirs(user_data_dir, exist_ok=True)
+
+        # Try to use system Chrome (has your logins) instead of Playwright's bundled Chromium
+        try:
+            self.context = await self.playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=False,
+                viewport={"width": 1280, "height": 800},
+                channel="chrome",  # Use installed Chrome instead of bundled Chromium
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                    "--no-sandbox",
+                ]
+            )
+        except Exception:
+            # The user's persistent profile can be locked by another Chromium
+            # process. Do not retry it: use an isolated profile so the task can
+            # continue without corrupting or depending on that profile.
+            self._temporary_profile = tempfile.mkdtemp(prefix="nexus-browser-")
+            self.context = await self.playwright.chromium.launch_persistent_context(
+                user_data_dir=self._temporary_profile,
+                headless=False,
+                viewport={"width": 1280, "height": 800},
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                    "--no-sandbox",
+                ]
+            )
+
+        self.page = self.context.pages[0] if self.context.pages else await self.context.new_page()
+
+    async def _ensure_page(self) -> Page:
+        """Ensure active and non-closed Playwright Page instance, recreating if needed."""
+        try:
+            if not self.playwright or not self.context:
+                await self.start()
+            elif self.page is None or self.page.is_closed():
+                if self.context.pages:
+                    for p in reversed(self.context.pages):
+                        if not p.is_closed():
+                            self.page = p
+                            break
+                    else:
+                        self.page = await self.context.new_page()
+                else:
+                    self.page = await self.context.new_page()
+        except Exception:
+            try:
+                await self.stop()
+            except Exception:
+                pass
+            await self.start()
+
+        return self.page
+
+    async def stop(self):
+        """Clean up browser resources."""
+        if self.page:
+            try:
+                await self.page.close()
+            except Exception:
+                pass
+        if self.context:
+            try:
+                await self.context.close()
+            except Exception:
+                pass
+        if self.playwright:
+            try:
+                await self.playwright.stop()
+            except Exception:
+                pass
+        if self._temporary_profile:
+            try:
+                shutil.rmtree(self._temporary_profile, ignore_errors=True)
+            except Exception:
+                pass
+            self._temporary_profile = None
+        self.page = None
+        self.context = None
+        self.playwright = None
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Page State Detection
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def detect_page_state(self) -> PageStateResult:
+        """
+        Inspect the current page and classify its state.
+        Returns structured state for direct handling.
+        """
+        if not self.page:
+            return PageStateResult(
+                state=BrowserPageState.UNKNOWN,
+                verified=False,
+                message="No browser page available",
+                details={}
+            )
+
+        try:
+            # Wait a bit for page to settle
+            await asyncio.sleep(0.5)
+
+            url = self.page.url
+            title = await self.page.title()
+
+            # Check for network/navigation errors first
+            if "net::" in url or "chrome-error://" in url or "about:neterror" in url:
+                return PageStateResult(
+                    state=BrowserPageState.NETWORK_ERROR,
+                    verified=False,
+                    message="Network/navigation error",
+                    details={"url": url, "title": title}
+                )
+
+            # Check for Google "sorry" / unusual traffic page (only on Google domains)
+            is_google_domain = "google.com" in url
+            if is_google_domain and ("/sorry/" in url or "sorry/index" in url or "unusual traffic" in url):
+                return PageStateResult(
+                    state=BrowserPageState.CAPTCHA,
+                    verified=False,
+                    message="Google CAPTCHA / human verification required",
+                    details={"url": url, "title": title, "type": "recaptcha"}
+                )
+
+            # Check for consent/interstitial page
+            if "consent.google.com" in url or "consent.youtube.com" in url:
+                return PageStateResult(
+                    state=BrowserPageState.CONSENT,
+                    verified=False,
+                    message="Google consent page requires acceptance",
+                    details={"url": url, "title": title}
+                )
+
+            # Get visible body text to avoid false positives on hidden HTML script tags / comments
+            body_text = ""
+            try:
+                body_text = (await self.page.inner_text("body", timeout=1000) or "").strip().lower()
+            except Exception:
+                pass
+
+            title_lower = title.lower()
+
+            # Generic consent overlay detection
+            if "before you continue" in body_text or ("cookie" in body_text and "accept" in body_text and len(body_text) < 1000):
+                try:
+                    consent_buttons = await self.page.locator("button:has-text('Accept'), button:has-text('Agree'), button:has-text('I agree')").all()
+                    if consent_buttons:
+                        return PageStateResult(
+                            state=BrowserPageState.CONSENT,
+                            verified=False,
+                            message="Consent overlay detected",
+                            details={"url": url, "title": title, "buttons_found": len(consent_buttons)}
+                        )
+                except Exception:
+                    pass
+
+            # Cloudflare / DDOS challenge pages by title or URL
+            if "just a moment..." in title_lower or "attention required! | cloudflare" in title_lower or "/challenge-platform/" in url:
+                return PageStateResult(
+                    state=BrowserPageState.CAPTCHA,
+                    verified=False,
+                    message="Cloudflare human verification required",
+                    details={"url": url, "title": title},
+                )
+
+            # Specific visible CAPTCHA challenge phrases (checked on visible text, not HTML script tags)
+            visible_challenge_phrases = (
+                "please verify you are a human",
+                "verify you are human",
+                "confirm you are human",
+                "complete the security check to continue",
+                "our systems have detected unusual traffic",
+                "press and hold to confirm you are human",
+            )
+            # Only classify as CAPTCHA if a challenge phrase is visible AND the page looks like an interstitial/blocking page
+            if any(phrase in body_text for phrase in visible_challenge_phrases):
+                is_short_page = len(body_text) < 1500
+                is_challenge_title = any(kw in title_lower for kw in ("captcha", "robot", "human verification", "security check", "unusual traffic", "challenge"))
+                if is_short_page or is_challenge_title or is_google_domain:
+                    return PageStateResult(
+                        state=BrowserPageState.CAPTCHA,
+                        verified=False,
+                        message="CAPTCHA / human verification required",
+                        details={"url": url, "title": title},
+                    )
+
+            # Check if on Google SERP (search results page)
+            is_google_serp = "google.com/search" in url
+            if is_google_serp:
+                # Check for actual results
+                result_count = await self._count_search_results()
+                if result_count == 0:
+                    # Could be empty results or CAPTCHA without clear indicators
+                    if "our systems have detected unusual traffic" in body_text:
+                        return PageStateResult(
+                            state=BrowserPageState.CAPTCHA,
+                            verified=False,
+                            message="CAPTCHA detected on SERP (no results shown)",
+                            details={"url": url, "title": title}
+                        )
+                    return PageStateResult(
+                        state=BrowserPageState.EMPTY_RESULTS,
+                        verified=False,
+                        message="Google SERP loaded but no organic results found",
+                        details={"url": url, "title": title, "result_count": 0}
+                    )
+                return PageStateResult(
+                    state=BrowserPageState.NORMAL_SERP,
+                    verified=True,
+                    message=f"Google SERP with {result_count} results",
+                    details={"url": url, "title": title, "result_count": result_count}
+                )
+
+            # Check if page is still loading
+            try:
+                ready_state = await self.page.evaluate("document.readyState")
+                if ready_state != "complete" and ready_state != "interactive":
+                    return PageStateResult(
+                        state=BrowserPageState.NAVIGATION_PENDING,
+                        verified=False,
+                        message=f"Page still loading (readyState: {ready_state})",
+                        details={"url": url, "title": title, "ready_state": ready_state}
+                    )
+            except Exception:
+                pass
+
+            return PageStateResult(
+                state=BrowserPageState.UNKNOWN,
+                verified=True,
+                message=f"Page loaded: {title}",
+                details={"url": url, "title": title}
+            )
+
+        except Exception as e:
+            return PageStateResult(
+                state=BrowserPageState.UNKNOWN,
+                verified=False,
+                message=f"Page state detection error: {str(e)}",
+                details={"error": str(e)}
+            )
+
+    async def _count_search_results(self) -> int:
+        """Count organic search results on current Google SERP."""
+        try:
+            # Multiple selectors for robustness
+            selectors = [
+                "div.g a[href]",           # Standard result links
+                "div[data-hveid] a[href]", # Another common pattern
+                "div.MjjYud a[href]",      # Modern Google layout
+                "div.g div.VwiC3b a[href]", # Snippet links
+            ]
+            total = 0
+            seen = set()
+            for sel in selectors:
+                try:
+                    els = await self.page.locator(sel).all()
+                    for el in els:
+                        href = await el.get_attribute("href")
+                        if href and href.startswith("http") and "google.com" not in href and href not in seen:
+                            seen.add(href)
+                            total += 1
+                except Exception:
+                    continue
+            return total
+        except Exception:
+            return 0
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Consent Handling
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def handle_consent_if_present(self) -> Dict[str, Any]:
+        """Click consent/accept buttons if a consent page is detected."""
+        try:
+            # Common consent button selectors
+            consent_selectors = [
+                "button:has-text('Accept all')",
+                "button:has-text('Accept')",
+                "button:has-text('I agree')",
+                "button:has-text('Agree')",
+                "button:has-text('Continue')",
+                "button[id*='accept']",
+                "button[jsname*='accept']",
+                "div[role='button']:has-text('Accept')",
+            ]
+            for sel in consent_selectors:
+                try:
+                    btn = self.page.locator(sel).first
+                    if await btn.is_visible(timeout=1000):
+                        await btn.click(timeout=3000)
+                        await self.page.wait_for_load_state("domcontentloaded", timeout=10000)
+                        await asyncio.sleep(1)
+                        return {"status": "success", "message": f"Consent accepted via '{sel}'"}
+                except Exception:
+                    continue
+            return {"status": "error", "message": "No consent button found or click failed"}
+        except Exception as e:
+            return {"status": "error", "message": f"Consent handling error: {str(e)}"}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Search with built-in result extraction
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def search(self, query: str) -> Dict[str, Any]:
+        """
+        Search fast-first: DuckDuckGo (light, usually answers in seconds),
+        then Google, then Bing. First engine with results wins.
+        Returns structured results to avoid redundant extraction step.
+        """
+        try:
+            ddg = await self._search_engine(
+                "https://duckduckgo.com/?q=",
+                query,
+                blocked_domains=["duckduckgo.com", "duck.com"],
+                engine_name="DuckDuckGo",
+            )
+            if ddg.get("status") == "success" and ddg.get("results"):
+                return ddg
+        except Exception:
+            pass
+        return await self._search_google(query)
+
+    async def _search_google(self, query: str) -> Dict[str, Any]:
+        """
+        Search Google and extract results in one action.
+        Falls back to Bing automatically if Google shows CAPTCHA/sorry page.
+        Returns structured results to avoid redundant extraction step.
+        """
+        try:
+            encoded = urllib.parse.quote_plus(query.strip())
+            await self.page.goto(
+                f"https://www.google.com/search?q={encoded}",
+                wait_until="domcontentloaded",
+                timeout=20000
+            )
+            await asyncio.sleep(1.5)  # let JS settle
+
+            # Detect page state first
+            page_state = await self.detect_page_state()
+
+            if page_state.state == BrowserPageState.CONSENT:
+                # Try to auto-handle consent
+                await self.handle_consent_if_present()
+                await asyncio.sleep(1)
+                page_state = await self.detect_page_state()
+
+            if page_state.state == BrowserPageState.CAPTCHA or page_state.state == BrowserPageState.SORRY_PAGE:
+                # Auto-fallback to Bing instead of blocking the user
+                return await self.search_bing(query)
+
+            if page_state.state == BrowserPageState.NETWORK_ERROR:
+                return create_browser_result("search", "error", "Network error during search", 
+                    page_state=page_state.state.value, retryable=True, details=page_state.details)
+
+            if page_state.state == BrowserPageState.EMPTY_RESULTS:
+                # A rendered Google page with no extractable results is often a
+                # markup/locale variation, not proof that the query has none.
+                return await self.search_bing(query)
+
+            # Extract results using multiple strategies
+            results = await self._extract_search_results_robust()
+
+            if not results:
+                return await self.search_bing(query)
+
+            search_results = [SearchResult(title=r["title"], url=r["url"], snippet=r.get("snippet", ""), index=i).to_dict() for i, r in enumerate(results)]
+
+            return create_browser_result("search", "success", f"Search completed: {len(results)} results found",
+                query=query, results=search_results, url=self.page.url, title=await self.page.title(),
+                page_state=page_state.state.value)
+
+        except Exception as e:
+            return create_browser_result("search", "error", f"Search failed: {str(e)}", retryable=True)
+
+    async def search_bing(self, query: str) -> Dict[str, Any]:
+        """
+        Fallback search using Bing — used automatically when Google blocks with CAPTCHA.
+        Falls back further to DuckDuckGo if Bing also fails to return results.
+        """
+        result = await self._search_engine(
+            "https://www.bing.com/search?q=",
+            query,
+            blocked_domains=["bing.com", "microsoft.com", "msn.com"],
+            engine_name="Bing"
+        )
+        if result.get("status") == "success":
+            return result
+        # Final fallback: DuckDuckGo
+        return await self._search_engine(
+            "https://duckduckgo.com/?q=",
+            query,
+            blocked_domains=["duckduckgo.com", "duck.com"],
+            engine_name="DuckDuckGo"
+        )
+
+    async def _search_engine(self, base_url: str, query: str, blocked_domains: list, engine_name: str) -> Dict[str, Any]:
+        """
+        Generic search engine helper with 4-strategy result extraction.
+        Strategy 1: Common result-container CSS selectors
+        Strategy 2: Any external <a href> on the page with meaningful text
+        Strategy 3: Regex URL extraction from page body text
+        Strategy 4: JavaScript evaluation to collect all anchor hrefs
+        """
+        try:
+            await self._ensure_page()
+            encoded = urllib.parse.quote_plus(query.strip())
+            await self.page.goto(
+                f"{base_url}{encoded}",
+                wait_until="domcontentloaded",
+                timeout=25000
+            )
+            await asyncio.sleep(2.0)  # Let JS render
+
+            results = []
+            seen_urls = set()
+
+            # ── Strategy 1: CSS containers (Bing, DuckDuckGo, Yahoo, etc.) ─────────
+            container_selectors = [
+                # Bing organic result items
+                "li.b_algo", "div.b_algo",
+                # DuckDuckGo
+                "article[data-testid='result']", "div.result",
+                # Generic
+                "div[class*='result']", "div[class*='Result']",
+            ]
+            for sel in container_selectors:
+                try:
+                    containers = await self.page.locator(sel).all()
+                    for container in containers[:12]:
+                        try:
+                            # 1. First look for the link in the title heading (h2 a, h3 a, a:has(h2/h3))
+                            # This avoids the top attribution / breadcrumb root domain link!
+                            link_el = None
+                            title_heading = None
+                            for h_sel in ("h2 a[href]", "h3 a[href]", "a[data-testid='result-title-a']", "a:has(h2)", "a:has(h3)", "h2", "h3"):
+                                candidate = container.locator(h_sel).first
+                                if await candidate.count() > 0:
+                                    title_heading = candidate
+                                    if await candidate.get_attribute("href"):
+                                        link_el = candidate
+                                    elif await candidate.locator("a[href]").count() > 0:
+                                        link_el = candidate.locator("a[href]").first
+                                    break
+
+                            href = None
+                            if link_el:
+                                href = await link_el.get_attribute("href", timeout=1000)
+
+                            # If no link found in heading, find all a[href] and prioritize deep URLs over root domain
+                            if not href or not href.startswith("http") or any(d in href for d in blocked_domains):
+                                all_links = await container.locator("a[href]").all()
+                                for candidate_link in all_links:
+                                    h = await candidate_link.get_attribute("href", timeout=500)
+                                    if h and h.startswith("http") and not any(d in h for d in blocked_domains):
+                                        # Prioritize URLs with path (not just root domain)
+                                        parsed = urllib.parse.urlparse(h)
+                                        if parsed.path and parsed.path.strip("/"):
+                                            href = h
+                                            link_el = candidate_link
+                                            break
+                                        elif not href:
+                                            href = h
+                                            link_el = candidate_link
+
+                            if not href or not href.startswith("http") or any(d in href for d in blocked_domains):
+                                continue
+                            if href in seen_urls:
+                                continue
+                            seen_urls.add(href)
+
+                            # 2. Extract Title
+                            title = ""
+                            if title_heading:
+                                title = (await title_heading.text_content() or "").strip()
+                            if not title and link_el:
+                                title = (await link_el.text_content() or "").strip()
+                            if not title:
+                                title = href[:120]
+
+                            # 3. Extract Snippet
+                            snippet = ""
+                            for s_sel in ("p", "div.b_caption p", "span", "div"):
+                                s_el = container.locator(s_sel).first
+                                if await s_el.count() > 0:
+                                    s_text = (await s_el.text_content() or "").strip()
+                                    if len(s_text) > 20 and s_text != title:
+                                        snippet = s_text[:300]
+                                        break
+
+                            results.append({"title": title, "url": href, "snippet": snippet})
+                        except Exception:
+                            continue
+                except Exception:
+                    continue
+                if len(results) >= 8:
+                    break
+
+            # ── Strategy 2: Deep <a href> on page (fallback) ─────────────────
+            if len(results) < 3:
+                try:
+                    els = await self.page.locator("a[href]").all()
+                    for el in els:
+                        try:
+                            href = await el.get_attribute("href", timeout=500)
+                            text = (await el.text_content() or "").strip()
+                            if not href or not href.startswith("http"):
+                                continue
+                            if any(d in href for d in blocked_domains):
+                                continue
+                            # Ensure it's a deep page link, not a root domain
+                            parsed = urllib.parse.urlparse(href)
+                            if not parsed.path or not parsed.path.strip("/"):
+                                continue
+                            if href in seen_urls or len(text) < 8:
+                                continue
+                            seen_urls.add(href)
+                            results.append({"title": text[:120], "url": href, "snippet": ""})
+                            if len(results) >= 10:
+                                break
+                        except Exception:
+                            continue
+                except Exception:
+                    pass
+
+            # ── Strategy 3: Regex URL extraction from page text ─────────────
+            if len(results) < 3:
+                try:
+                    body_text = await self.page.inner_text("body")
+                    urls_found = re.findall(r'https?://[^\s\)\]\}\'\"\<\>]+', body_text)
+                    for u in urls_found:
+                        u = u.rstrip(".,;:")
+                        if any(d in u for d in blocked_domains):
+                            continue
+                        parsed = urllib.parse.urlparse(u)
+                        if not parsed.path or not parsed.path.strip("/"):
+                            continue
+                        if u in seen_urls:
+                            continue
+                        seen_urls.add(u)
+                        results.append({"title": u, "url": u, "snippet": "Extracted from page text"})
+                        if len(results) >= 10:
+                            break
+                except Exception:
+                    pass
+
+            # ── Strategy 4: JavaScript href collection ──────────────────────
+            if len(results) < 3:
+                try:
+                    hrefs = await self.page.evaluate("""
+                        () => Array.from(document.querySelectorAll('a[href]'))
+                            .map(a => ({href: a.href, text: a.innerText?.trim() || ''}))
+                            .filter(x => x.href.startsWith('http') && x.text.length > 5)
+                    """)
+                    for item in hrefs[:30]:
+                        href = item.get("href", "")
+                        text = item.get("text", "")
+                        if any(d in href for d in blocked_domains):
+                            continue
+                        parsed = urllib.parse.urlparse(href)
+                        if not parsed.path or not parsed.path.strip("/"):
+                            continue
+                        if href in seen_urls:
+                            continue
+                        seen_urls.add(href)
+                        results.append({"title": text[:120], "url": href, "snippet": ""})
+                        if len(results) >= 10:
+                            break
+                except Exception:
+                    pass
+
+            if not results:
+                return {
+                    "status": "error",
+                    "verified": False,
+                    "message": f"{engine_name} search returned no results",
+                    "retryable": False,
+                    "url": self.page.url
+                }
+
+            return {
+                "status": "success",
+                "verified": True,
+                "page_state": f"{engine_name.lower()}_serp",
+                "message": f"{engine_name} search: {len(results)} results found",
+                "query": query,
+                "results": results[:10],
+                "url": self.page.url,
+                "title": await self.page.title()
+            }
+
+        except Exception as e:
+            return {"status": "error", "verified": False, "message": f"{engine_name} search failed: {str(e)}", "retryable": True}
+
+    async def _extract_search_results_robust(self) -> List[Dict[str, Any]]:
+        """
+        Extract search results using multiple strategies for robustness.
+        Filters out Google internal/navigation links and unwraps redirect parameters.
+        """
+        results = []
+        seen_urls = set()
+
+        def _clean_url(u: str) -> str:
+            if not u:
+                return ""
+            if "google.com/url?" in u or "google.com/url%3F" in u:
+                m = re.search(r"[?&]q=([^&]+)", u)
+                if m:
+                    return urllib.parse.unquote(m.group(1))
+            return u
+
+        # Strategy 1: Standard organic result containers
+        try:
+            containers = await self.page.locator("div.g, div[data-hveid], div.MjjYud").all()
+            for container in containers[:15]:
+                try:
+                    # Find heading link first (h3 a, a:has(h3)) to avoid header favicon/root domain link
+                    link_el = None
+                    heading = None
+                    for h_sel in ("a:has(h3)", "h3 a[href]", "a[href]:has(h3)", "h3"):
+                        candidate = container.locator(h_sel).first
+                        if await candidate.count() > 0:
+                            heading = candidate
+                            if await candidate.get_attribute("href"):
+                                link_el = candidate
+                            elif await candidate.locator("a[href]").count() > 0:
+                                link_el = candidate.locator("a[href]").first
+                            break
+
+                    href = None
+                    if link_el:
+                        href = await link_el.get_attribute("href")
+                    else:
+                        link_el = container.locator("a[href]").first
+                        href = await link_el.get_attribute("href")
+
+                    href = _clean_url(href)
+                    if not href or not href.startswith("http") or "google.com" in href:
+                        continue
+                    if href in seen_urls:
+                        continue
+                    seen_urls.add(href)
+
+                    # Extract title and snippet
+                    title = ""
+                    if heading:
+                        title = (await heading.text_content() or "").strip()
+                    elif link_el:
+                        title = (await link_el.text_content() or "").strip()
+
+                    snippet = ""
+                    snippet_els = container.locator("div.VwiC3b, div.s, span").all()
+                    for se in snippet_els:
+                        text = (await se.text_content() or "").strip()
+                        if len(text) > 20 and text != title:
+                            snippet = text[:300]
+                            break
+
+                    if title or snippet:
+                        results.append({"title": title or href, "url": href, "snippet": snippet})
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # Strategy 2: Direct link extraction (fallback)
+        if len(results) < 3:
+            try:
+                els = await self.page.locator("div.g a[href], div[data-hveid] a[href]").all()
+                for el in els:
+                    try:
+                        href = await el.get_attribute("href")
+                        href = _clean_url(href)
+                        text = (await el.text_content() or "").strip()
+                        if not href or not href.startswith("http") or "google.com" in href:
+                            continue
+                        parsed = urllib.parse.urlparse(href)
+                        if not parsed.path or not parsed.path.strip("/"):
+                            continue
+                        if href in seen_urls:
+                            continue
+                        if len(text) < 5:
+                            continue
+                        seen_urls.add(href)
+                        results.append({"title": text[:120], "url": href, "snippet": ""})
+                        if len(results) >= 10:
+                            break
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
+        return results[:10]
+
+    async def extract_search_results(self) -> List[Dict[str, Any]]:
+        """Extract clickable search result links from the current Google SERP (legacy method)."""
+        results = await self._extract_search_results_robust()
+        return results
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Navigation & Extraction
+    # ─────────────────────────────────────────────────────────────────────────
+
+    async def open(self, url: str = "about:blank", new_tab: bool = False) -> Dict[str, Any]:
+        """Open a URL in the browser with automatic page recovery."""
+        await self._ensure_page()
+        try:
+            if new_tab and self.context:
+                self.page = await self.context.new_page()
+            await self.page.goto(url, wait_until="domcontentloaded", timeout=20000)
+            title = await self.page.title()
+            return create_browser_result("open", "success", f"Opened {url}", url=url, title=title)
+        except Exception as e:
+            err_msg = str(e)
+            if "closed" in err_msg.lower() or "crash" in err_msg.lower() or "target" in err_msg.lower():
+                try:
+                    await self._ensure_page()
+                    await self.page.goto(url, wait_until="domcontentloaded", timeout=20000)
+                    title = await self.page.title()
+                    return create_browser_result("open", "success", f"Opened {url} (recovered)", url=url, title=title)
+                except Exception as retry_e:
+                    return create_browser_result("open", "error", f"Failed to open {url}: {str(retry_e)}")
+            return create_browser_result("open", "error", f"Failed to open {url}: {err_msg}")
+
+    async def go_to(self, url: str) -> Dict[str, Any]:
+        """Navigate to a URL."""
+        return await self.open(url)
+
+    async def get_page_title(self) -> Dict[str, Any]:
+        """Get the current page title."""
+        await self._ensure_page()
+        try:
+            title = await self.page.title()
+            url = self.page.url
+            return create_browser_result("get_page_title", "success", f"Page title: {title}", title=title, url=url)
+        except Exception as e:
+            return create_browser_result("get_page_title", "error", f"Failed to get page title: {str(e)}")
+
+    async def click(self, selector: str) -> Dict[str, Any]:
+        """Click a visible element and return observable before/after page state."""
+        try:
+            locator = self.page.locator(selector).first
+            if await locator.count() == 0:
+                return create_browser_result("click", "error", f"Element not found: {selector}")
+            if not await locator.is_visible():
+                return create_browser_result("click", "error", f"Element is not visible: {selector}")
+            before_url = self.page.url
+            await locator.click(timeout=8000)
+            try:
+                await self.page.wait_for_load_state("domcontentloaded", timeout=3000)
+            except Exception:
+                pass
+            return create_browser_result("click", "success", f"Clicked: {selector}",
+                before_url=before_url, url=self.page.url, title=await self.page.title())
+        except Exception as e:
+            return create_browser_result("click", "error", f"Failed to click: {str(e)}")
+
+    async def type(self, selector: str, text: str) -> Dict[str, Any]:
+        """Fill an editable element and verify the value was accepted."""
+        try:
+            locator = self.page.locator(selector).first
+            if await locator.count() == 0 or not await locator.is_visible():
+                return create_browser_result("type", "error", f"Editable element unavailable: {selector}")
+            await locator.fill(text, timeout=8000)
+            value = await locator.input_value(timeout=3000)
+            if value != text:
+                return create_browser_result("type", "error", f"Text was not retained by {selector}")
+            return create_browser_result("type", "success", f"Typed into {selector}", value=value)
+        except Exception as e:
+            return create_browser_result("type", "error", f"Failed to type: {str(e)}")
+
+    async def back(self) -> Dict[str, Any]:
+        """Go back in browser history."""
+        try:
+            await self.page.go_back(wait_until="domcontentloaded")
+            return create_browser_result("back", "success", "Went back")
+        except Exception as e:
+            return create_browser_result("back", "error", f"Failed to go back: {str(e)}")
+
+    async def forward(self) -> Dict[str, Any]:
+        """Go forward in browser history."""
+        try:
+            await self.page.go_forward(wait_until="domcontentloaded")
+            return create_browser_result("forward", "success", "Went forward")
+        except Exception as e:
+            return create_browser_result("forward", "error", f"Failed to go forward: {str(e)}")
+
+    async def new_tab(self) -> Dict[str, Any]:
+        """Open a new tab."""
+        try:
+            self.page = await self.context.new_page()
+            return create_browser_result("new_tab", "success", "New tab opened")
+        except Exception as e:
+            return create_browser_result("new_tab", "error", f"Failed to open new tab: {str(e)}")
+
+    async def close_tab(self) -> Dict[str, Any]:
+        """Close current tab."""
+        try:
+            await self.page.close()
+            return create_browser_result("close_tab", "success", "Tab closed")
+        except Exception as e:
+            return create_browser_result("close_tab", "error", f"Failed to close tab: {str(e)}")
+
+    async def list_tabs(self) -> Dict[str, Any]:
+        """List all tab URLs."""
+        try:
+            pages = self.context.pages
+            tabs = [{"index": i, "url": page.url} for i, page in enumerate(pages)]
+            return {"status": "success", "tabs": tabs}
+        except Exception as e:
+            return {"status": "error", "message": f"Failed to list tabs: {str(e)}"}
+
+    async def extract(self, selector: str) -> Dict[str, Any]:
+        """Extract text from an element."""
+        try:
+            element = self.page.locator(selector)
+            text = await element.text_content(timeout=5000)
+            return create_browser_result("extract", "success", "Text extracted", text=text, selector=selector)
+        except Exception as e:
+            return create_browser_result("extract", "error", f"Failed to extract: {str(e)}")
+
+    async def get_page_text(self) -> Dict[str, Any]:
+        """
+        Extract clean, deduplicated article content from the current page.
+        Prioritizes <article>, <main>, and article containers over <body>.
+        Handles Wikipedia main article content separately and strips navigation,
+        ads, cookies, footers, headers, buttons, and UI noise.
+        """
+        if not self.page:
+            return create_browser_result("get_page_text", "error", "No active browser page")
+
+        try:
+            # First attempt: execute in-browser DOM parser with noise stripping
+            if hasattr(self.page, "evaluate"):
+                try:
+                    js_extractor = """
+                    () => {
+                        const isWikipedia = window.location.hostname.includes('wikipedia.org');
+                        let rootEl = null;
+
+                        if (isWikipedia) {
+                            rootEl = document.querySelector('#mw-content-text .mw-parser-output') ||
+                                     document.querySelector('#mw-content-text') ||
+                                     document.querySelector('#bodyContent') ||
+                                     document.querySelector('#content');
+                        } else {
+                            const candidateSelectors = [
+                                'article',
+                                'main',
+                                '[role="main"]',
+                                '#main-content',
+                                '#content-main',
+                                '#mainContent',
+                                '#primary',
+                                '.article-body',
+                                '.article-content',
+                                '.entry-content',
+                                '.post-content',
+                                '.story-content',
+                                '.story-body',
+                                '.article__body',
+                                '.post__content',
+                                '.content-article',
+                                '#article',
+                                '#content',
+                                '.content',
+                                '.main'
+                            ];
+                            for (const sel of candidateSelectors) {
+                                const el = document.querySelector(sel);
+                                if (el && (el.innerText || el.textContent || '').trim().length > 200) {
+                                    rootEl = el;
+                                    break;
+                                }
+                            }
+                        }
+
+                        if (!rootEl) {
+                            rootEl = document.body;
+                        }
+
+                        if (!rootEl) {
+                            return { text: '', title: document.title || '', url: window.location.href || '' };
+                        }
+
+                        const clone = rootEl.cloneNode(true);
+
+                        const noiseSelectors = [
+                            'script', 'style', 'noscript', 'svg', 'canvas', 'iframe', 'form', 'button',
+                            'input', 'select', 'textarea', 'nav', 'header', 'footer', 'aside', 'menu', 'dialog',
+                            '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+                            '[role="complementary"]', '[role="dialog"]', '[role="alert"]',
+                            '.nav', '.navbar', '.navigation', '.menu', '.header', '.footer', '.sidebar',
+                            '.ad', '.ads', '.advertisement', '.ad-container', '.ad-wrapper', '.banner-ad',
+                            '.sponsor', '.sponsored', '.cookie', '.cookie-banner', '.cookie-consent',
+                            '.consent', '.modal', '.popup', '.overlay', '.share', '.social-share',
+                            '.share-buttons', '.social-media', '.newsletter', '.subscription',
+                            '.subscribe', '.comments', '.comment-section', '.related-posts',
+                            '.recommended', '.breadcrumb', '.breadcrumbs'
+                        ];
+
+                        if (isWikipedia) {
+                            noiseSelectors.push(
+                                '.mw-editsection', '.mw-jump-link', '.navbox', '.vertical-navbox',
+                                '.catlinks', '.infobox', '.toc', '#toc', '.reference', '.reflist',
+                                '.mw-references-wrap', '.thumbcaption', '.vector-header',
+                                '.vector-sidebar', '.vector-menu', '#mw-navigation', '#siteNotice',
+                                '.mw-indicators', '.noprint', '.hatnote', '.ambox', '.metadata',
+                                '.gallery', '.printfooter', '.mw-headline-number'
+                            );
+                        }
+
+                        for (const sel of noiseSelectors) {
+                            try {
+                                const elements = clone.querySelectorAll(sel);
+                                elements.forEach(el => el.remove());
+                            } catch(e) {}
+                        }
+
+                        const blocks = [];
+                        const blockElements = clone.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, blockquote');
+                        const boilerplatePatterns = [
+                            /cookie/i, /sign\\s*in/i, /log\\s*in/i, /terms\\s+of\\s+(use|service)/i,
+                            /privacy\\s+policy/i, /all\\s+rights\\s+reserved/i, /subscribe/i,
+                            /share\\s+this/i, /follow\\s+us/i, /advertisement/i, /read\\s+more/i,
+                            /copyright/i, /back\\s+to\\s+top/i
+                        ];
+
+                        if (blockElements.length > 0) {
+                            blockElements.forEach(el => {
+                                const txt = (el.innerText || el.textContent || '').trim().replace(/\\s+/g, ' ');
+                                if (txt.length < 15 && !el.tagName.match(/^H[1-6]$/i)) return;
+                                if (txt.length < 120) {
+                                    for (const pat of boilerplatePatterns) {
+                                        if (pat.test(txt)) return;
+                                    }
+                                }
+                                blocks.push(txt);
+                            });
+                        }
+
+                        let extractedText = '';
+                        if (blocks.length > 0) {
+                            const uniqueBlocks = [];
+                            const seen = new Set();
+                            for (const b of blocks) {
+                                const key = b.toLowerCase();
+                                if (!seen.has(key)) {
+                                    seen.add(key);
+                                    uniqueBlocks.push(b);
+                                }
+                            }
+                            extractedText = uniqueBlocks.join('\\n\\n');
+                        } else {
+                            extractedText = (clone.innerText || clone.textContent || '').trim();
+                        }
+
+                        return {
+                            text: extractedText.slice(0, 15000),
+                            title: document.title || '',
+                            url: window.location.href || ''
+                        };
+                    }
+                    """
+                    data = await self.page.evaluate(js_extractor)
+                    if data and data.get("text"):
+                        clean_text = self._clean_extracted_text(data.get("text", ""))
+                        title_res = await self.get_page_title()
+                        return create_browser_result("get_page_text", "success", "Page text extracted",
+                            text=clean_text[:12000],
+                            title=title_res.get("title", ""),
+                            url=title_res.get("url", ""))
+                except Exception:
+                    pass
+
+            # Fallback: Playwright inner_text or text_content with Python-side text cleaning
+            raw_text = ""
+            for selector in ["article", "main", "[role='main']", "#mw-content-text", "#content", "body"]:
+                try:
+                    el = self.page.locator(selector).first
+                    if await el.count() > 0:
+                        raw_text = await el.inner_text(timeout=3000)
+                        if raw_text and len(raw_text.strip()) > 150:
+                            break
+                except Exception:
+                    continue
+
+            if not raw_text:
+                try:
+                    raw_text = await self.page.inner_text("body", timeout=5000)
+                except Exception:
+                    raw_text = ""
+
+            clean_text = self._clean_extracted_text(raw_text)
+            title_result = await self.get_page_title()
+            return create_browser_result("get_page_text", "success", "Page text extracted",
+                text=clean_text[:12000] if clean_text else "",
+                title=title_result.get("title", ""),
+                url=title_result.get("url", ""))
+        except Exception as e:
+            return create_browser_result("get_page_text", "error", f"Failed to get page text: {str(e)}")
+
+    @staticmethod
+    def _clean_extracted_text(raw_text: str) -> str:
+        """Deduplicate lines and strip navigation/cookie/boilerplate text."""
+        if not raw_text:
+            return ""
+
+        noise_patterns = [
+            re.compile(r"^\s*(home|menu|search|navigation|skip to (content|main)|sign in|log in|register)\s*$", re.I),
+            re.compile(r"^\s*(cookie policy|cookie notice|cookies?|privacy policy|terms of (use|service)|all rights reserved|copyright \d{4})\s*$", re.I),
+            re.compile(r"^\s*(share|tweet|follow us on|subscribe to newsletter|advertisement)\s*$", re.I),
+            re.compile(r"^\s*(edit\s*\[\s*edit\s*\]|\^ jump up to:|retrieved on \d+)\s*$", re.I),
+            re.compile(r"^\[edit\]$", re.I),
+        ]
+
+        lines = [line.strip() for line in raw_text.splitlines()]
+        cleaned_lines = []
+        seen = set()
+
+        for line in lines:
+            line_normalized = re.sub(r"\s+", " ", line).strip()
+            if not line_normalized:
+                continue
+            # Always apply full-line noise check (catches 'Cookie Policy', 'Privacy Policy', etc.)
+            if any(p.match(line_normalized) for p in noise_patterns):
+                continue
+            # Drop very short lines without sentence termination (navigation/UI noise)
+            if len(line_normalized) < 15 and not line_normalized.endswith((".", ":", "?", "!")):
+                continue
+            # Drop medium-length lines that match a noise pattern
+            if any(p.search(line_normalized) for p in noise_patterns) and len(line_normalized) < 80:
+                continue
+
+            line_key = line_normalized.lower()
+            if line_key in seen:
+                continue
+            seen.add(line_key)
+            cleaned_lines.append(line_normalized)
+
+        return "\n\n".join(cleaned_lines)
+
+
+    async def get_links(self, limit: int = 20) -> Dict[str, Any]:
+        """Get all hyperlinks on the current page."""
+        try:
+            links = []
+            els = await self.page.locator("a[href]").all()
+            seen = set()
+            for el in els:
+                try:
+                    href = await el.get_attribute("href")
+                    text = (await el.text_content() or "").strip()
+                    if href and href.startswith("http") and href not in seen:
+                        seen.add(href)
+                        links.append({"url": href, "text": text[:100]})
+                except Exception:
+                    pass
+            return create_browser_result("get_links", "success", f"Found {len(links)} links", links=links[:limit])
+        except Exception as e:
+            return create_browser_result("get_links", "error", f"Failed to get links: {str(e)}")
+
+    async def screenshot(self) -> Dict[str, Any]:
+        """Take a screenshot (laptop Screenshots folder + album mirror)."""
+        try:
+            from system_ops import get_screenshots_dir, mirror_into_gallery
+            img_dir = get_screenshots_dir()
+            filename = f"browser_{int(time.time())}.png"
+            path = os.path.join(img_dir, filename)
+            await self.page.screenshot(path=path)
+            mirror_into_gallery(path)
+            return create_browser_result("screenshot", "success", f"Screenshot saved: {path}", path=path)
+        except Exception as e:
+            return create_browser_result("screenshot", "error", f"Failed to screenshot: {str(e)}")
+
+    async def search_images(self, query: str, limit: int = 8) -> List[str]:
+        """Search Bing Images for a query and return candidate direct image URLs.
+
+        Uses a temporary page in the same context so the current research page
+        is never disturbed. Returns [] on any failure (never raises)."""
+        if not self.context:
+            return []
+        page = None
+        try:
+            page = await self.context.new_page()
+            await page.goto(
+                "https://www.bing.com/images/search?q=" + urllib.parse.quote(query),
+                timeout=25000,
+                wait_until="domcontentloaded"
+            )
+            await page.wait_for_timeout(2500)
+            candidates = await page.evaluate("""() => {
+                const out = [];
+                for (const m of document.querySelectorAll('a.iusc')) {
+                    const attr = m.getAttribute('m');
+                    if (!attr) continue;
+                    try {
+                        const obj = JSON.parse(attr.replace(/&quot;/g, '"'));
+                        if (obj && obj.murl) out.push(obj.murl);
+                    } catch(e) {}
+                }
+                if (out.length === 0) {
+                    for (const img of document.querySelectorAll('img.mimg')) {
+                        const src = img.getAttribute('src') || img.getAttribute('data-src') || '';
+                        if (src) out.push(src);
+                    }
+                }
+                return out;
+            }""")
+            results = []
+            for u in candidates or []:
+                if not u or not isinstance(u, str):
+                    continue
+                u = u.strip()
+                if u.startswith("data:") or u.startswith("blob:"):
+                    continue
+                if len(u) > 500:
+                    continue
+                if u not in results:
+                    results.append(u)
+            return results[:limit]
+        except Exception:
+            return []
+        finally:
+            if page:
+                try:
+                    await page.close()
+                except Exception:
+                    pass
+
+    async def wait(self, selector: str = None, timeout: int = 5000) -> Dict[str, Any]:
+        """Wait for an element or timeout."""
+        try:
+            if selector:
+                await self.page.wait_for_selector(selector, timeout=timeout)
+            else:
+                await asyncio.sleep(timeout / 1000)
+            return {"status": "success", "message": "Wait completed"}
+        except Exception as e:
+            return {"status": "error", "message": f"Wait failed: {str(e)}"}
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Browser Pro: downloads, login assist, parallel tabs, table extraction
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _filename_from_url(url: str, fallback: str = "download") -> str:
+        try:
+            path = urllib.parse.urlsplit(url).path.rstrip("/")
+            name = path.rsplit("/", 1)[-1] if path else ""
+            name = urllib.parse.unquote(name).strip()
+            if name and "." in name and len(name) <= 128:
+                return re.sub(r'[<>:"/\\|?*]', "_", name)
+        except Exception:
+            pass
+        return fallback
+
+    async def download_file(self, url: str, save_dir: str,
+                            max_mb: int = 100) -> Dict[str, Any]:
+        """Download a file URL directly (no page navigation needed).
+
+        Bounded (default 100MB cap) and never raises — returns a result dict
+        with `path` on success. `save_dir` is created when missing."""
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            import requests
+            resp = requests.get(
+                url, timeout=30, stream=True,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+            if resp.status_code != 200:
+                return create_browser_result("download", "error",
+                    f"Download failed: HTTP {resp.status_code} for {url}")
+            filename = self._filename_from_url(url)
+            ctype = (resp.headers.get("Content-Disposition", "") or "")
+            m = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', ctype)
+            if m:
+                cand = urllib.parse.unquote(m.group(1).strip().strip('"'))
+                if cand and len(cand) <= 128:
+                    filename = re.sub(r'[<>:"/\\|?*]', "_", cand)
+            path = os.path.join(save_dir, filename)
+            base, ext = os.path.splitext(path)
+            i = 1
+            while os.path.exists(path):
+                i += 1
+                path = f"{base}_{i}{ext}"
+            size = 0
+            with open(path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=65536):
+                    if not chunk:
+                        continue
+                    size += len(chunk)
+                    if size > max_mb * 1024 * 1024:
+                        try:
+                            os.remove(path)
+                        except Exception:
+                            pass
+                        return create_browser_result("download", "error",
+                            f"Download exceeds {max_mb}MB cap — aborted")
+                    f.write(chunk)
+            if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                return create_browser_result("download", "error",
+                    "Download produced an empty file")
+            return create_browser_result("download", "success",
+                f"Downloaded: {path}", path=path, url=url)
+        except Exception as e:
+            return create_browser_result("download", "error",
+                f"Download failed: {str(e)}")
+
+    async def download_via_click(self, selector: str, save_dir: str,
+                                 timeout: int = 15000) -> Dict[str, Any]:
+        """Click a download link/button and capture the browser download event.
+
+        Used when the file has no direct URL (JS-driven downloads). Saves into
+        `save_dir` and returns `path` on success."""
+        await self._ensure_page()
+        try:
+            os.makedirs(save_dir, exist_ok=True)
+            locator = self.page.locator(selector).first
+            if await locator.count() == 0:
+                return create_browser_result("download", "error",
+                    f"Download element not found: {selector}")
+            async with self.page.expect_download(timeout=timeout) as dl_info:
+                await locator.click(timeout=8000)
+            download = await dl_info.value
+            filename = download.suggested_filename or "download"
+            filename = re.sub(r'[<>:"/\\|?*]', "_", filename)
+            path = os.path.join(save_dir, filename)
+            await download.save_as(path)
+            if os.path.isfile(path):
+                return create_browser_result("download", "success",
+                    f"Downloaded: {path}", path=path)
+            return create_browser_result("download", "error",
+                "Browser download event fired but no file was saved")
+        except Exception as e:
+            return create_browser_result("download", "error",
+                f"Click-download failed (no download event within {timeout}ms): {str(e)}")
+
+    async def fill_login_username(self, selector: str, username: str) -> Dict[str, Any]:
+        """Fill ONLY the username/email field of a login form.
+
+        Passwords are never accepted here by design — the human completes the
+        password/2FA/CAPTCHA step in the visible browser directly
+        (human-in-the-loop). Returns success when the value was retained."""
+        await self._ensure_page()
+        try:
+            locator = self.page.locator(selector).first
+            if await locator.count() == 0 or not await locator.is_visible():
+                return create_browser_result("login_fill", "error",
+                    f"Login field unavailable: {selector}")
+            await locator.fill(username, timeout=8000)
+            value = await locator.input_value(timeout=3000)
+            if value != username:
+                return create_browser_result("login_fill", "error",
+                    f"Username was not retained by {selector}")
+            return create_browser_result("login_fill", "success",
+                "Username entered — waiting for human to complete password/2FA", value=value)
+        except Exception as e:
+            return create_browser_result("login_fill", "error",
+                f"Failed to fill login field: {str(e)}")
+
+    async def check_logged_in(self) -> Dict[str, Any]:
+        """Heuristic login check: logout/account markers or post-login URL.
+
+        Returns `logged_in: True/False` plus the evidence found. Conservative:
+        unknown pages report False so direct handling asks the human instead of
+        claiming a login it cannot prove."""
+        await self._ensure_page()
+        try:
+            url = (self.page.url or "").lower()
+            body = await self.page.evaluate(
+                "() => (document.body ? document.body.innerText : '').slice(0, 8000)")
+            text = (body or "").lower()
+            if self.page.url:
+                try:
+                    title = (await self.page.title() or "").lower()
+                except Exception:
+                    title = ""
+                text = f"{title}\n{text}"
+            login_markers = ["log out", "logout", "sign out", "sign-out",
+                             "my account", "account settings", "dashboard"]
+            evidence = [m for m in login_markers if m in text]
+            on_login_page = any(k in url for k in
+                ["login", "signin", "sign-in", "auth", "sso", "oauth"])
+            logged_in = bool(evidence) or (not on_login_page and bool(evidence))
+            if evidence:
+                logged_in = True
+            return create_browser_result("login_check",
+                "success" if logged_in else "error",
+                ("Logged in (%s)" % ", ".join(evidence)) if logged_in
+                else "No login evidence found (still on login page or no account markers)",
+                logged_in=logged_in, url=self.page.url)
+        except Exception as e:
+            return create_browser_result("login_check", "error",
+                f"Login check failed: {str(e)}", logged_in=False)
+
+    async def extract_tables(self, max_tables: int = 5,
+                             max_rows: int = 200) -> Dict[str, Any]:
+        """Extract HTML tables from the current page as structured rows.
+
+        Returns `tables: [{caption, headers, rows}]`. Never raises."""
+        await self._ensure_page()
+        try:
+            raw = await self.page.evaluate("""() => {
+                const out = [];
+                for (const t of document.querySelectorAll('table')) {
+                    const rows = [];
+                    for (const tr of t.querySelectorAll('tr')) {
+                        const cells = [];
+                        for (const c of tr.querySelectorAll('th, td')) {
+                            cells.push((c.innerText || '').trim().replace(/\\s+/g, ' '));
+                        }
+                        if (cells.length) rows.push(cells);
+                    }
+                    if (!rows.length) continue;
+                    let caption = '';
+                    const cap = t.querySelector('caption');
+                    if (cap) caption = (cap.innerText || '').trim().slice(0, 120);
+                    out.push({caption, rows});
+                }
+                return out;
+            }""")
+            tables = []
+            for entry in (raw or [])[:max_tables]:
+                rows = entry.get("rows", [])[:max_rows]
+                if not rows:
+                    continue
+                first = rows[0]
+                rest = rows[1:]
+                # Heuristic: first row is a header when no cell looks numeric.
+                is_header = first and not any(
+                    re.search(r"\d", c) for c in first)
+                tables.append({
+                    "caption": entry.get("caption", ""),
+                    "headers": first if is_header else [],
+                    "rows": rest if is_header else rows,
+                })
+            if not tables:
+                return create_browser_result("extract_table", "error",
+                    "No HTML tables found on this page", tables=[])
+            return create_browser_result("extract_table", "success",
+                f"Extracted {len(tables)} table(s)", tables=tables)
+        except Exception as e:
+            return create_browser_result("extract_table", "error",
+                f"Table extraction failed: {str(e)}", tables=[])
+
+    async def extract_parallel(self, urls: List[str],
+                               max_pages: int = 5) -> Dict[str, Any]:
+        """Open up to `max_pages` URLs in separate tabs and extract each.
+
+        Tabs are navigated concurrently; text is then pulled through the
+        existing single-page extractor so cleaning rules stay identical.
+        Extra tabs are closed afterwards and the original tab is restored.
+        Returns `sources: [{url, title, text}]`. Never raises."""
+        await self._ensure_page()
+        urls = [u for u in (urls or []) if u and u.startswith(("http://", "https://"))]
+        urls = urls[:max(1, max_pages)]
+        if not urls:
+            return create_browser_result("parallel_extract", "error",
+                "No valid http(s) URLs provided", sources=[])
+        original = self.page
+        pages = []
+        try:
+            for _ in urls:
+                try:
+                    pages.append(await self.context.new_page())
+                except Exception:
+                    pass
+            if not pages:
+                return create_browser_result("parallel_extract", "error",
+                    "Could not open new tabs", sources=[])
+
+            async def _load(page, url):
+                try:
+                    await page.goto(unwrap_search_url(url), wait_until="domcontentloaded",
+                                    timeout=25000)
+                    return True
+                except Exception:
+                    return False
+
+            await asyncio.gather(*[_load(p, u) for p, u in zip(pages, urls)])
+            sources = []
+            for page, url in zip(pages, urls):
+                if page.is_closed():
+                    continue
+                self.page = page
+                try:
+                    title = await page.title()
+                except Exception:
+                    title = ""
+                text_res = await self.get_page_text()
+                text = text_res.get("text", "") if text_res else ""
+                if text and len(text.strip()) > 50:
+                    sources.append({"url": page.url or url,
+                                    "title": title, "text": text[:5000]})
+            return create_browser_result("parallel_extract", "success",
+                f"Extracted {len(sources)}/{len(urls)} pages", sources=sources)
+        except Exception as e:
+            return create_browser_result("parallel_extract", "error",
+                f"Parallel extraction failed: {str(e)}", sources=[])
+        finally:
+            for p in pages:
+                try:
+                    await p.close()
+                except Exception:
+                    pass
+            try:
+                if original and not original.is_closed():
+                    self.page = original
+                else:
+                    await self._ensure_page()
+            except Exception:
+                pass
+
+    @property
+    def current_url(self) -> str:
+        """Return the current page URL."""
+        try:
+            return self.page.url if self.page else ""
+        except Exception:
+            return ""

@@ -1,0 +1,1626 @@
+import os
+import re
+import subprocess
+import webbrowser
+import psutil
+import shutil
+import pyautogui
+import tempfile
+from datetime import datetime
+
+# Root folder for Nexus's work files
+WORK_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "work_files"))
+if not os.path.exists(WORK_DIR):
+    os.makedirs(WORK_DIR)
+
+def get_system_stats():
+    """Retrieve current system resource utilization."""
+    try:
+        cpu = psutil.cpu_percent(interval=None)
+        memory = psutil.virtual_memory().percent
+        disk = psutil.disk_usage('C:').percent
+        
+        # Get up to 5 running processes using resources
+        processes = []
+        for proc in sorted(psutil.process_iter(['name', 'cpu_percent', 'memory_percent']), 
+                           key=lambda p: p.info.get('cpu_percent') or 0, reverse=True)[:5]:
+            try:
+                processes.append({
+                    "name": proc.info['name'],
+                    "cpu": proc.info['cpu_percent'],
+                    "memory": round(proc.info['memory_percent'], 1) if proc.info['memory_percent'] else 0
+                })
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                pass
+                
+        return {
+            "cpu": cpu,
+            "memory": memory,
+            "disk": disk,
+            "processes": processes,
+            "timestamp": datetime.now().strftime("%H:%M:%S")
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def open_application(app_name: str) -> dict:
+    """Launch standard Windows applications or websites."""
+    app_name = app_name.lower().strip()
+    
+    # Common websites
+    websites = {
+        "google": "https://www.google.com",
+        "youtube": "https://www.youtube.com",
+        "github": "https://www.github.com",
+        "chatgpt": "https://chatgpt.com",
+        "gmail": "https://mail.google.com",
+        "wikipedia": "https://www.wikipedia.org"
+    }
+    
+    if app_name in websites or app_name.startswith("http://") or app_name.startswith("https://") or app_name.endswith(".com") or app_name.endswith(".org"):
+        url = websites.get(app_name, app_name if app_name.startswith("http") else f"https://{app_name}")
+        webbrowser.open(url)
+        return {"status": "success", "message": f"Opened browser to {url}"}
+        
+    # Standard Windows apps mapping
+    apps = {
+        "notepad": "notepad.exe",
+        "calculator": "calc.exe",
+        "calc": "calc.exe",
+        "paint": "mspaint.exe",
+        "cmd": "cmd.exe",
+        "command prompt": "cmd.exe",
+        "explorer": "explorer.exe",
+        "task manager": "taskmgr.exe",
+        "taskmgr": "taskmgr.exe"
+    }
+    
+    if app_name in apps:
+        subprocess.Popen(apps[app_name], shell=True)
+        return {"status": "success", "message": f"Launched {app_name}"}
+    
+    # Generic fallback: try running it directly
+    try:
+        subprocess.Popen(app_name, shell=True)
+        return {"status": "success", "message": f"Attempted to launch command: {app_name}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to launch {app_name}: {str(e)}"}
+
+def close_application(app_name: str) -> dict:
+    """Terminate standard processes by name."""
+    app_name = app_name.lower().replace(".exe", "").strip()
+    # Safe guard: don't close critical system processes
+    protected = ["explorer", "svchost", "lsass", "services", "system", "idle", "python", "node"]
+    if app_name in protected:
+        return {"status": "error", "message": f"Cannot close protected system application: {app_name}"}
+        
+    try:
+        # Use taskkill on Windows to kill by process name
+        output = subprocess.check_output(f'taskkill /F /IM "{app_name}.exe"', shell=True, stderr=subprocess.STDOUT)
+        return {"status": "success", "message": f"Closed {app_name}: {output.decode().strip()}"}
+    except subprocess.CalledProcessError:
+        # Try finding processes via psutil
+        closed_count = 0
+        for proc in psutil.process_iter(['name']):
+            try:
+                if proc.info['name'] and app_name in proc.info['name'].lower():
+                    proc.kill()
+                    closed_count += 1
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        if closed_count > 0:
+            return {"status": "success", "message": f"Closed {closed_count} instances of {app_name}"}
+        return {"status": "error", "message": f"No running application found matching: {app_name}"}
+
+def list_files(subdir: str = "") -> dict:
+    """List all files in the Nexus work files directory."""
+    target_dir = os.path.abspath(os.path.join(WORK_DIR, subdir))
+    # Prevent directory traversal attacks
+    if not target_dir.startswith(WORK_DIR):
+        return {"status": "error", "message": "Access denied: outside work workspace"}
+        
+    if not os.path.exists(target_dir):
+        return {"status": "error", "message": f"Directory does not exist: {subdir}"}
+        
+    try:
+        items = []
+        for name in os.listdir(target_dir):
+            path = os.path.join(target_dir, name)
+            is_dir = os.path.isdir(path)
+            size = os.path.getsize(path) if not is_dir else 0
+            items.append({
+                "name": name,
+                "is_dir": is_dir,
+                "size": size,
+                "relative_path": os.path.relpath(path, WORK_DIR).replace("\\", "/")
+            })
+        return {"status": "success", "files": items, "current_dir": os.path.relpath(target_dir, WORK_DIR).replace("\\", "/")}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+def write_file(filename: str, content: str) -> dict:
+    """Create or overwrite a file in the work files directory."""
+    # Ensure safe filename
+    filename = os.path.basename(filename)
+    path = os.path.join(WORK_DIR, filename)
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        return {"status": "success", "message": f"Successfully wrote file: {filename}", "path": path}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to write file: {str(e)}"}
+
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__)))
+# Top-level project files users ask about ("requirements.txt", "main.py").
+# Directories are NEVER searched at project root (node_modules etc. are huge).
+_ROOT_SEARCH_SKIP = {
+    "node_modules", ".git", "__pycache__", "dist", "whisper.cpp",
+    "ws-scrcpy", "work_files", ".backup", "downloads",
+}
+
+
+def _strip_folder_phrases(raw: str) -> str:
+    """Turn 'requirements.txt in the nexus (claude) folder' into a filename."""
+    text = (raw or "").strip().strip("\"'").replace("\\", "/")
+    # Drop trailing folder phrases: "in X", "from X folder", "under X dir".
+    text = re.split(r"\s+(?:in|from|under|inside|of)\s+", text, maxsplit=1)[0].strip()
+    # "read file named X" leftovers.
+    text = re.sub(r"^(?:file|the file|a file)\s+(?:named|called)?\s*", "", text,
+                  flags=re.I).strip()
+    return text.strip("\"'")
+
+
+def _iter_candidate_files():
+    """(display, full_path) pairs: work_files recursive + project-root files."""
+    seen = set()
+    try:
+        for dirpath, dirnames, filenames in os.walk(WORK_DIR):
+            dirnames[:] = [d for d in dirnames
+                           if not d.startswith(".") and d != "__pycache__"]
+            for fn in filenames:
+                full = os.path.join(dirpath, fn)
+                rel = os.path.relpath(full, WORK_DIR)
+                if full not in seen:
+                    seen.add(full)
+                    yield rel, full
+    except Exception:
+        pass
+    try:
+        for fn in os.listdir(PROJECT_ROOT):
+            full = os.path.join(PROJECT_ROOT, fn)
+            if os.path.isfile(full) and full not in seen:
+                seen.add(full)
+                yield fn, full
+    except Exception:
+        pass
+
+
+def resolve_user_file(raw: str) -> dict:
+    """Resolve a user's (possibly typo'd) file reference.
+
+    Returns {"status": "success", "path", "display", "fuzzy": bool} or
+    {"status": "clarify", "message", "options"} or {"status": "error", "message"}.
+    Searches work_files (recursive) first, then top-level project files.
+    """
+    import difflib
+    query = _strip_folder_phrases(raw)
+    if not query:
+        return {"status": "error", "message": "You didn't name a file, sir."}
+    candidates = list(_iter_candidate_files())
+    if not candidates:
+        return {"status": "error", "message": "I have no files to search, sir."}
+
+    q = query.strip()
+    q_base = os.path.basename(q).lower()
+    q_nospace = re.sub(r"\s+", "", q_base)
+
+    def base_of(display: str) -> str:
+        return os.path.basename(display).lower()
+
+    # 1. Exact: full relative path or basename, case-insensitive.
+    for display, full in candidates:
+        if display.lower() == q.lower() or base_of(display) == q_base:
+            return {"status": "success", "path": full, "display": display,
+                    "fuzzy": False}
+    # 2. Extension-optional: "requirements" -> "requirements.txt".
+    stem_hits = [(d, f) for d, f in candidates
+                 if os.path.splitext(base_of(d))[0] == os.path.splitext(q_base)[0]
+                 and q_base and "." not in q_base]
+    if len(stem_hits) == 1:
+        d, f = stem_hits[0]
+        return {"status": "success", "path": f, "display": d, "fuzzy": True}
+
+    basenames = [base_of(d) for d, _ in candidates]
+    # 3. Typo tolerance: close basename matches.
+    close = difflib.get_close_matches(q_base, basenames, n=3, cutoff=0.6)
+    close += [b for b in basenames
+              if q_nospace and q_nospace in re.sub(r"\s+", "", b)
+              and b not in close][:3 - len(close)]
+    options = []
+    for b in close:
+        for d, _ in candidates:
+            if base_of(d) == b and d not in options:
+                options.append(d)
+                break
+    if len(options) == 1:
+        d = options[0]
+        full = next(f for dd, f in candidates if dd == d)
+        return {"status": "success", "path": full, "display": d, "fuzzy": True}
+    if len(options) > 1:
+        return {"status": "clarify",
+                "message": (f"I found a few files like '{query}', sir — "
+                            f"which one did you mean?"),
+                "options": options[:3]}
+    return {"status": "error",
+            "message": f"I couldn't find any file like '{query}', sir. I searched "
+                       f"your work files and the project folder."}
+
+def read_file(filename: str) -> dict:
+    """Read a user file — exact, extension-optional, or typo-tolerant match."""
+    resolved = resolve_user_file(filename)
+    if resolved["status"] != "success":
+        return resolved
+    try:
+        with open(resolved["path"], "r", encoding="utf-8") as f:
+            content = f.read()
+        out = {"status": "success", "content": content,
+               "filename": resolved["display"]}
+        if resolved.get("fuzzy"):
+            out["message"] = f"Matched '{resolved['display']}', sir."
+        return out
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to read file: {str(e)}"}
+
+def delete_file(filename: str) -> dict:
+    """Delete a file or folder — exact, extension-optional, or typo-tolerant.
+
+    Folders are still only deletable inside the work files directory."""
+    resolved = resolve_user_file(filename)
+    if resolved["status"] != "success":
+        # Fallback: deleting a whole folder inside work files by exact path.
+        safe = _strip_folder_phrases(filename).replace("\\", "/").lstrip("/")
+        dir_path = os.path.abspath(os.path.join(WORK_DIR, safe))
+        if (safe and dir_path.startswith(os.path.abspath(WORK_DIR) + os.sep)
+                and os.path.isdir(dir_path)):
+            try:
+                shutil.rmtree(dir_path)
+                return {"status": "success",
+                        "message": f"Deleted folder: {safe}"}
+            except Exception as e:
+                return {"status": "error", "message": str(e)}
+        return resolved
+    path = resolved["path"]
+
+    # Safety: project-root files are read-only through NEXUS; only the
+    # work-files tree may be deleted.
+    if not os.path.abspath(path).startswith(os.path.abspath(WORK_DIR) + os.sep):
+        return {"status": "error",
+                "message": f"For safety I can only delete files inside your work "
+                           f"folder, sir — '{resolved['display']}' lives outside it."}
+
+    try:
+        if os.path.isfile(path):
+            os.remove(path)
+        elif os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            return {
+                "status": "error",
+                "message": "Unsupported file type."
+            }
+
+        return {
+            "status": "success",
+            "message": f"Deleted: {resolved['display']}"
+        }
+
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+def take_screenshot() -> dict:
+    """Take a screenshot of the main screen and return its status.
+
+    Saves into the laptop's main Screenshots folder and mirrors a copy
+    into work_files/screenshots so the NEXUS album shows it."""
+    try:
+        img_dir = get_screenshots_dir()
+        filename = f"screenshot_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+        path = os.path.join(img_dir, filename)
+        pyautogui.screenshot(path)
+        mirror_into_gallery(path)
+        return {"status": "success", "message": f"Screenshot saved: {path}", "path": path}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to take screenshot: {str(e)}"}
+
+def get_desktop_path():
+    user_profile = os.environ.get("USERPROFILE", "C:\\Users\\taha")
+    # Try OneDrive desktop first, then regular desktop
+    onedrive_desktop = os.path.join(user_profile, "OneDrive", "Desktop")
+    if os.path.exists(onedrive_desktop):
+        return onedrive_desktop
+    regular_desktop = os.path.join(user_profile, "Desktop")
+    if os.path.exists(regular_desktop):
+        return regular_desktop
+    return user_profile
+
+def get_screenshots_dir():
+    """The laptop's main Screenshots folder (Pictures\\Screenshots).
+
+    Every screenshot NEXUS takes lands here so it sits alongside the
+    user's own captures. Falls back to work_files/screenshots when the
+    Pictures folder is unavailable. Always returns an existing directory."""
+    user_profile = os.environ.get("USERPROFILE", "")
+    candidates = []
+    if user_profile:
+        candidates.append(os.path.join(user_profile, "Pictures", "Screenshots"))
+        candidates.append(os.path.join(user_profile, "OneDrive", "Pictures", "Screenshots"))
+    for cand in candidates:
+        try:
+            os.makedirs(cand, exist_ok=True)
+            if os.path.isdir(cand):
+                return cand
+        except Exception:
+            pass
+    fallback = os.path.join(WORK_DIR, "screenshots")
+    os.makedirs(fallback, exist_ok=True)
+    return fallback
+
+def get_documents_dir():
+    """NEXUS work documents folder (Word/PPT/PDF artifacts live here)."""
+    doc_dir = os.path.join(WORK_DIR, "documents")
+    os.makedirs(doc_dir, exist_ok=True)
+    return doc_dir
+
+def mirror_into_gallery(src_path: str) -> str:
+    """Copy a laptop-side screenshot into work_files/screenshots so the
+    NEXUS album (/api/gallery → pc_screenshot) shows it too.
+    Returns the gallery copy path, or '' when the copy was impossible
+    (e.g. source already inside work_files). Never raises."""
+    try:
+        if not src_path or not os.path.isfile(src_path):
+            return ""
+        norm_src = os.path.abspath(src_path)
+        norm_work = os.path.abspath(WORK_DIR)
+        if norm_src.startswith(norm_work + os.sep):
+            return ""
+        dest_dir = os.path.join(WORK_DIR, "screenshots")
+        os.makedirs(dest_dir, exist_ok=True)
+        dest = os.path.join(dest_dir, os.path.basename(norm_src))
+        base, ext = os.path.splitext(dest)
+        i = 1
+        while os.path.exists(dest):
+            i += 1
+            dest = f"{base}_{i}{ext}"
+        import shutil
+        shutil.copy2(norm_src, dest)
+        return dest
+    except Exception:
+        return ""
+
+def create_folder(folder_name: str) -> dict:
+    """Create a folder relative to workspace, or on desktop if specified."""
+    import re
+    folder_name_lower = folder_name.lower()
+    
+    # Check if they want it on desktop
+    if "desktop" in folder_name_lower:
+        # Clean folder_name, e.g. "my_test on desktop" -> "my_test"
+        clean_name = re.sub(r'\s+on\s+desktop', '', folder_name, flags=re.I)
+        clean_name = re.sub(r'desktop\s+named\s+', '', clean_name, flags=re.I)
+        clean_name = os.path.basename(clean_name.strip())
+        path = os.path.join(get_desktop_path(), clean_name)
+    elif os.path.isabs(folder_name):
+        path = folder_name
+    else:
+        path = os.path.abspath(os.path.join(WORK_DIR, folder_name))
+        
+    try:
+        os.makedirs(path, exist_ok=True)
+        return {"status": "success", "message": f"Successfully created folder: {os.path.basename(path)}", "path": path}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to create folder: {str(e)}"}
+
+
+# ── Document helpers (human-like Word documents) ─────────────────────────────
+
+_CHART_MARKER_RE = None  # built lazily to avoid import churn
+
+
+def _number_token(value):
+    """Coerce a token like '42', '1,200', '12%' to float or None."""
+    try:
+        return float(str(value).replace(",", "").replace("%", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_document_blocks(content: str):
+    """Extract [CHART:type] Title / label: value, ... blocks from document text.
+
+    Markers are removed from the returned text; each chart becomes a spec dict
+    ready for the chart renderer. Example:
+
+        [CHART:bar] Quarterly Sales
+        Jan: 42, Feb: 55, Mar: 39
+
+        [CHART:histogram] Age Spread
+        5 8 9 12 7 11 9
+
+    Returns (cleaned_text, chart_specs).
+    """
+    global _CHART_MARKER_RE
+    if _CHART_MARKER_RE is None:
+        import re as _re
+        _CHART_MARKER_RE = _re.compile(r"^\[CHART:(\w+)\]\s*(.*)$")
+
+    lines = content.split("\n")
+    out = []
+    specs = []
+    i = 0
+    while i < len(lines):
+        m = _CHART_MARKER_RE.match(lines[i].strip())
+        if not m:
+            out.append(lines[i])
+            i += 1
+            continue
+
+        ctype = m.group(1).lower()
+        title = m.group(2).strip()
+        labels = []
+        values = []
+        raw_nums = []
+        i += 1
+        while i < len(lines):
+            dl = lines[i].strip()
+            if not dl or _CHART_MARKER_RE.match(dl) or dl.startswith("#"):
+                break
+            if ":" in dl:
+                for pair in dl.split(","):
+                    if ":" in pair:
+                        lab, val = pair.split(":", 1)
+                        num = _number_token(val)
+                        if num is not None:
+                            labels.append(str(lab).strip())
+                            values.append(num)
+            else:
+                for tok in dl.split():
+                    num = _number_token(tok)
+                    if num is not None:
+                        raw_nums.append(num)
+            i += 1
+
+        spec = {"type": ctype if ctype in ("pie", "bar", "histogram", "line") else "bar", "title": title}
+        if ctype == "histogram" and raw_nums:
+            spec["data"] = raw_nums
+        elif labels:
+            spec["labels"] = labels
+            spec["values"] = values
+        elif values:
+            spec["values"] = values
+        else:
+            spec["values"] = [0]
+        specs.append(spec)
+    return "\n".join(out), specs
+
+
+def _docx_add_table(doc, rows):
+    """Add one markdown table (rows = list of '|a|b|' strings) to a docx."""
+    from docx.shared import Pt, RGBColor
+    table_data = []
+    for line in rows:
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        # skip the |---| :---:| separator row
+        if all(re.match(r"^:?-+:?$", c or "-") for c in cells):
+            continue
+        table_data.append(cells)
+    if not table_data:
+        return
+    cols = max(len(r) for r in table_data)
+    table = doc.add_table(rows=len(table_data), cols=cols)
+    table.style = 'Table Grid'
+    for r_i, row in enumerate(table_data):
+        for c_i in range(cols):
+            cell = table.rows[r_i].cells[c_i]
+            cell.text = ""
+            run = cell.paragraphs[0].add_run(str(row[c_i]) if c_i < len(row) else "")
+            if r_i == 0:
+                run.bold = True
+                run.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+
+
+def _render_chart_bytes(spec):
+    """Render a chart spec to (png_bytes_io, width_in, height_in) via backend.tools.charts."""
+    from backend.tools.charts import render_chart
+    import io as _io
+    png, w, h = render_chart(spec)
+    return _io.BytesIO(png), w, h
+
+
+def archive_document_artifact(path: str) -> str:
+    """Copy a created document/PPT into the in-project work_files/documents so the
+    FILES/GALLERY view always shows it (persists across restarts).
+
+    Returns the archive path, or the original path if already inside work_files.
+    """
+    try:
+        import shutil
+        doc_dir = os.path.join(WORK_DIR, "documents")
+        os.makedirs(doc_dir, exist_ok=True)
+        norm_work = os.path.abspath(WORK_DIR)
+        if os.path.dirname(os.path.abspath(path)).lower().startswith(norm_work.lower()):
+            return path
+        dest = os.path.join(doc_dir, os.path.basename(path))
+        if os.path.abspath(path).lower() != os.path.abspath(dest).lower():
+            shutil.copy2(path, dest)
+        return dest
+    except Exception:
+        return path
+
+
+def create_word_document(filename: str, content: str, charts: list = None) -> dict:
+    """Create a Microsoft Word .docx file relative to workspace, or on desktop if specified.
+
+    Content supports light markdown so documents look human-made:
+      # / ## / ### headings, - bullets, |a|b| markdown tables, and
+      [CHART:pie|bar|histogram|line] Title / label: value, ... blocks
+      which are rendered and embedded as real chart images.
+    """
+    import re
+    if not filename.endswith('.docx'):
+        filename += '.docx'
+
+    # Check if desktop requested
+    filename_lower = filename.lower()
+    if "desktop" in filename_lower:
+        clean_name = re.sub(r'\s+on\s+desktop', '', filename, flags=re.I)
+        clean_name = os.path.basename(clean_name.strip())
+        path = os.path.join(get_desktop_path(), clean_name)
+    else:
+        filename = os.path.basename(filename)
+        path = os.path.join(get_documents_dir(), filename)
+
+    clean_content, embedded_charts = _parse_document_blocks(content)
+    all_charts = list(charts or []) + embedded_charts
+
+    try:
+        import docx
+        from docx.shared import Inches, Pt, RGBColor
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+        doc = docx.Document()
+
+        # Title (styled from the filename) — reads like a real document
+        title_text = os.path.splitext(os.path.basename(path))[0].replace("_", " ").replace("-", " ").strip()
+        title_p = doc.add_heading(title_text.title() if title_text else "Document", level=0)
+        title_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        clean_lines = clean_content.split('\n')
+        i = 0
+        while i < len(clean_lines):
+            raw_line = clean_lines[i]
+            line = raw_line.strip()
+            if not line:
+                i += 1
+                continue
+            # Markdown table block (consecutive | a | b | rows)
+            if line.startswith('|') and line.count('|') >= 2:
+                block = []
+                while i < len(clean_lines):
+                    tl = clean_lines[i].strip()
+                    if tl.startswith('|') and tl.count('|') >= 2:
+                        block.append(tl)
+                    else:
+                        break
+                    i += 1
+                _docx_add_table(doc, block)
+                continue
+            # Markdown headings
+            if line.startswith('### '):
+                doc.add_heading(line[4:].strip().title(), level=2)
+            elif line.startswith('## '):
+                doc.add_heading(line[3:].strip().title(), level=1)
+            elif line.startswith('# '):
+                doc.add_heading(line[2:].strip().title(), level=1)
+            # Bullets
+            elif line.startswith(("- ", "* ", "• ")):
+                doc.add_paragraph(line[2:].strip(), style='List Bullet')
+            # ALL-CAPS short line behaves like a section header
+            elif line.isupper() and len(line) < 60:
+                doc.add_heading(line.title(), level=1)
+            else:
+                doc.add_paragraph(line)
+            i += 1
+
+        # Embedded charts
+        for cspec in all_charts:
+            try:
+                png, cw, chh = _render_chart_bytes(cspec)
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p.add_run()
+                run.add_picture(png, width=Inches(min(cw, 6.0)))
+                cap = doc.add_paragraph()
+                cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                cap_run = cap.add_run(cspec.get("title", ""))
+                cap_run.italic = True
+                cap_run.font.size = Pt(9)
+                cap_run.font.color.rgb = RGBColor(0x66, 0x66, 0x66)
+            except Exception as chart_err:
+                print(f"[system_ops] Chart embedding skipped: {chart_err}")
+
+        doc.save(path)
+        archive_path = archive_document_artifact(path)
+        result = {"status": "success", "message": f"Word document created successfully: {os.path.basename(path)}", "path": path}
+        if archive_path and archive_path != path:
+            result["archive_path"] = archive_path
+        return result
+    except Exception as e:
+        print(f"python-docx error: {str(e)}, using plain text fallback")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(clean_content)
+            result = {"status": "success", "message": f"Created document (plain text fallback): {os.path.basename(path)}", "path": path}
+            archive_path = archive_document_artifact(path)
+            if archive_path and archive_path != path:
+                result["archive_path"] = archive_path
+            return result
+        except Exception as e2:
+            return {"status": "error", "message": f"Failed to create document: {str(e2)}"}
+
+def check_pc_health() -> dict:
+    """Perform a comprehensive system health check."""
+    import socket
+    import time
+    
+    # 1. Internet connection and ping latency test
+    ping_ok = False
+    ping_time = 0.0
+    try:
+        start_t = time.time()
+        socket.setdefaulttimeout(2.5)
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect(("8.8.8.8", 53))
+        ping_time = round((time.time() - start_t) * 1000, 1)
+        ping_ok = True
+    except Exception:
+        pass
+        
+    # 2. Hardware Resource Metrics
+    cpu = psutil.cpu_percent(interval=0.3)
+    memory = psutil.virtual_memory().percent
+    disk = psutil.disk_usage('C:').percent
+    
+    # 3. Battery status check
+    battery_msg = "N/A"
+    if hasattr(psutil, "sensors_battery"):
+        battery = psutil.sensors_battery()
+        if battery:
+            battery_msg = f"{battery.percent}% {'(Charging)' if battery.power_plugged else '(Discharging)'}"
+            
+    # 4. Warnings and diagnosis
+    health_score = 100
+    warnings = []
+    
+    if cpu > 70:
+        health_score -= 20
+        warnings.append(f"High CPU load detected ({cpu}%)")
+    if memory > 75:
+        health_score -= 20
+        warnings.append(f"High memory utilization ({memory}%)")
+    if disk > 90:
+        health_score -= 15
+        warnings.append(f"C: Drive space is critically low ({disk}%)")
+    if not ping_ok:
+        health_score -= 10
+        warnings.append("No active internet connection detected")
+        
+    status = "EXCELLENT" if health_score >= 90 else "GOOD" if health_score >= 75 else "DEGRADED" if health_score >= 50 else "CRITICAL"
+
+    # 5. Top resource hogs + uptime + free space (actionable, not just numbers)
+    top_cpu, top_mem, uptime_str, free_gb = [], [], "", 0.0
+    try:
+        procs = []
+        for proc in psutil.process_iter(['name', 'cpu_percent', 'memory_info']):
+            try:
+                info = proc.info
+                name = (info.get('name') or '?').replace('.exe', '')
+                cpu_p = float(info.get('cpu_percent') or 0.0)
+                try:
+                    mem_mb = float((info.get('memory_info') or (0,))[0]) / (1024 * 1024)
+                except (TypeError, IndexError):
+                    mem_mb = 0.0
+                if cpu_p > 0.5 or mem_mb > 100:
+                    procs.append({"name": name, "cpu": cpu_p, "mem_mb": mem_mb})
+            except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                continue
+        top_cpu = sorted(procs, key=lambda p: p["cpu"], reverse=True)[:3]
+        top_mem = sorted(procs, key=lambda p: p["mem_mb"], reverse=True)[:3]
+    except Exception:
+        pass
+    try:
+        import datetime as _dt
+        boot = _dt.datetime.fromtimestamp(psutil.boot_time())
+        delta = _dt.datetime.now() - boot
+        days, rem = divmod(int(delta.total_seconds()), 86400)
+        hrs, rem = divmod(rem, 3600)
+        mins = rem // 60
+        uptime_str = (f"{days}d {hrs}h" if days else f"{hrs}h {mins}m") if (days or hrs or mins) else "just booted"
+    except Exception:
+        pass
+    try:
+        du = psutil.disk_usage('C:')
+        free_gb = round(du.free / (1024 ** 3), 1)
+    except Exception:
+        pass
+    advice = []
+    try:
+        if top_mem and top_mem[0]["mem_mb"] > 800:
+            advice.append(f"{top_mem[0]['name']} is holding {top_mem[0]['mem_mb'] / 1024:.1f} GB — say 'close {top_mem[0]['name']}' to free it")
+        if disk > 90:
+            advice.append("disk is nearly full — say 'clean temp files' to reclaim space")
+        if not ping_ok:
+            pass  # already warned above
+    except Exception:
+        pass
+
+    report_text = f"System health is {status} (Score: {health_score}/100). "
+    if warnings:
+        report_text += "Warnings detected: " + ", ".join(warnings) + ". "
+    else:
+        report_text += "All hardware metrics are within nominal ranges. "
+    if top_cpu:
+        report_text += "Busiest CPU: " + ", ".join(f"{p['name']} ({p['cpu']:.0f}%)" for p in top_cpu) + ". "
+    if top_mem:
+        report_text += "Heaviest memory: " + ", ".join(f"{p['name']} ({p['mem_mb'] / 1024:.1f} GB)" for p in top_mem) + ". "
+    if advice:
+        report_text += " ".join(advice) + "."
+
+    return {
+        "status": "success",
+        "message": report_text.strip(),
+        "report": {
+            "status": status,
+            "score": health_score,
+            "cpu": f"{cpu}%",
+            "memory": f"{memory}%",
+            "disk": f"{disk}%",
+            "disk_free_gb": free_gb,
+            "battery": battery_msg,
+            "ping": f"{ping_time}ms" if ping_ok else "Offline",
+            "uptime": uptime_str,
+            "top_cpu": [{"name": p["name"], "cpu": round(p["cpu"], 1)} for p in top_cpu],
+            "top_memory": [{"name": p["name"], "gb": round(p["mem_mb"] / 1024, 2)} for p in top_mem],
+            "advice": advice,
+            "warnings": warnings if warnings else ["All systems nominal."]
+        }
+    }
+
+
+def empty_recycle_bin() -> dict:
+    """Empty the Windows Recycle Bin (no confirmation UI). Reports count+size."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _SHQUERYRBINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD),
+                        ("i64Size", ctypes.c_int64),
+                        ("i64NumItems", ctypes.c_int64)]
+
+        shell32 = ctypes.windll.shell32
+        info = _SHQUERYRBINFO()
+        info.cbSize = ctypes.sizeof(_SHQUERYRBINFO)
+        before_items, before_size = 0, 0
+        try:
+            if shell32.SHQueryRecycleBinW(None, ctypes.byref(info)) == 0:
+                before_items, before_size = int(info.i64NumItems), int(info.i64Size)
+        except Exception:
+            pass
+        # 1 = no confirmation, 2 = no progress UI, 4 = no sound
+        rc = shell32.SHEmptyRecycleBinW(None, None, 1 | 2 | 4)
+        if rc != 0:
+            return {"status": "error", "message": f"Couldn't empty the Recycle Bin (error {rc})."}
+        if before_items == 0:
+            return {"status": "success", "message": "Recycle Bin was already empty — nothing to clear.",
+                    "items": 0, "freed_bytes": 0}
+        mb = before_size / (1024 * 1024)
+        size_str = f"{mb:.1f} MB" if mb < 1024 else f"{mb / 1024:.2f} GB"
+        return {"status": "success",
+                "message": f"Recycle Bin emptied — {before_items} item(s), {size_str} reclaimed.",
+                "items": before_items, "freed_bytes": before_size}
+    except Exception as e:
+        return {"status": "error", "message": f"Couldn't empty the Recycle Bin: {str(e)}"}
+
+
+def clean_temp_files() -> dict:
+    """Delete stale files from user + Windows temp folders. Reports freed space."""
+    import tempfile as _tf
+    freed, removed, skipped = 0, 0, 0
+    targets = []
+    try:
+        for key in ("TEMP", "TMP"):
+            val = os.environ.get(key, "")
+            if val and os.path.isdir(val):
+                targets.append(val)
+        win_temp = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "Temp")
+        if os.path.isdir(win_temp):
+            targets.append(win_temp)
+    except Exception:
+        pass
+    seen = set()
+    for root in targets:
+        norm = os.path.normcase(os.path.abspath(root))
+        if norm in seen:
+            continue
+        seen.add(norm)
+        # Safety: only touch real temp dirs, never walk out of them.
+        for dirpath, _dirnames, filenames in os.walk(norm):
+            for fn in filenames:
+                fp = os.path.join(dirpath, fn)
+                try:
+                    sz = os.path.getsize(fp)
+                    os.remove(fp)
+                    freed += sz
+                    removed += 1
+                except (OSError, PermissionError):
+                    skipped += 1
+                except Exception:
+                    skipped += 1
+            # Keep walking (locked files are skipped individually above).
+    try:
+        gb = freed / (1024 ** 3)
+        size_str = f"{gb:.2f} GB" if gb >= 1 else f"{freed / (1024 ** 2):.1f} MB" if freed >= 1024 * 1024 else f"{freed // 1024} KB"
+    except Exception:
+        size_str = "some space"
+    if removed == 0:
+        return {"status": "success",
+                "message": "Temp folders are already clean — nothing to remove.",
+                "removed": 0, "freed_bytes": 0}
+    return {"status": "success",
+            "message": f"Cleaned {removed} temp file(s), freeing {size_str}."
+                       + (f" ({skipped} in-use files skipped.)" if skipped else ""),
+            "removed": removed, "freed_bytes": freed, "skipped": skipped}
+
+def adjust_volume(action: str) -> dict:
+    """Adjust or mute the system volume using simulated keypresses."""
+    action = action.lower().strip()
+    try:
+        if action == "up":
+            for _ in range(5):
+                pyautogui.press("volumeup")
+            return {"status": "success", "message": "Increased system volume, sir."}
+        elif action == "down":
+            for _ in range(5):
+                pyautogui.press("volumedown")
+            return {"status": "success", "message": "Decreased system volume, sir."}
+        elif action == "mute":
+            pyautogui.press("volumemute")
+            return {"status": "success", "message": "Toggled mute status, sir."}
+        else:
+            return {"status": "error", "message": f"Unknown volume action: {action}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to adjust volume: {str(e)}"}
+
+def media_control(action: str) -> dict:
+    """Control media playback (play, pause, next, skip, prev)."""
+    action = action.lower().strip()
+    try:
+        if action in ["play", "pause", "play_pause", "toggle"]:
+            pyautogui.press("playpause")
+            return {"status": "success", "message": "Toggled media playback, sir."}
+        elif action in ["next", "skip"]:
+            pyautogui.press("nexttrack")
+            return {"status": "success", "message": "Skipped to next track, sir."}
+        elif action in ["prev", "previous", "back"]:
+            pyautogui.press("prevtrack")
+            return {"status": "success", "message": "Returned to previous track, sir."}
+        else:
+            return {"status": "error", "message": f"Unknown media action: {action}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to control media: {str(e)}"}
+
+def search_web(query: str) -> dict:
+    """Open Google results AND speak a one-paragraph instant answer.
+
+    The browser still opens for depth, but Nexus now reads out the
+    short answer (DuckDuckGo instant answers, keyless) when one exists —
+    so "who won..." / "capital of..." get answered aloud, not just shown.
+    """
+    import urllib.parse
+    try:
+        url = f"https://www.google.com/search?q={urllib.parse.quote(query)}"
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+        answer = ""
+        try:
+            from backend.tools.knowledge import instant_answer
+            res = instant_answer(query)
+            if res.get("status") == "success" and res.get("answer"):
+                answer = res["answer"]
+        except Exception:
+            answer = ""
+        if answer:
+            return {"status": "success",
+                    "message": f"Here's what I found on '{query}': {answer} I've opened the full results in your browser too.",
+                    "answer": answer, "query": query}
+        return {"status": "success",
+                "message": f"I've opened Google results for '{query}' in your browser.",
+                "query": query}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to search web: {str(e)}"}
+
+
+def launch_any_app(app_name: str) -> dict:
+    """Find and launch ANY installed application by searching Start Menu shortcuts, Program Files, and PATH.
+    This is much more powerful than open_application - it can find apps like VS Code, Spotify, Discord, etc."""
+    import glob
+    
+    app_name_lower = app_name.lower().strip()
+    
+    # 1. First check common websites
+    websites = {
+        "google": "https://www.google.com",
+        "youtube": "https://www.youtube.com",
+        "github": "https://www.github.com",
+        "chatgpt": "https://chatgpt.com",
+        "gmail": "https://mail.google.com",
+        "wikipedia": "https://www.wikipedia.org",
+        "whatsapp web": "https://web.whatsapp.com",
+        "instagram": "https://www.instagram.com",
+        "twitter": "https://twitter.com",
+        "reddit": "https://www.reddit.com",
+        "netflix": "https://www.netflix.com",
+        "amazon": "https://www.amazon.com",
+    }
+    
+    if app_name_lower in websites:
+        webbrowser.open(websites[app_name_lower])
+        return {"status": "success", "message": f"Opened {app_name} in your browser, sir."}
+    
+    if app_name_lower.startswith("http://") or app_name_lower.startswith("https://") or app_name_lower.endswith(".com") or app_name_lower.endswith(".org"):
+        url = app_name if app_name.startswith("http") else f"https://{app_name}"
+        webbrowser.open(url)
+        return {"status": "success", "message": f"Opened {url} in your browser, sir."}
+    
+    # 2. Quick built-in apps mapping
+    quick_apps = {
+        "notepad": "notepad.exe",
+        "calculator": "calc.exe",
+        "calc": "calc.exe",
+        "paint": "mspaint.exe",
+        "cmd": "cmd.exe",
+        "command prompt": "cmd.exe",
+        "powershell": "powershell.exe",
+        "explorer": "explorer.exe",
+        "file explorer": "explorer.exe",
+        "task manager": "taskmgr.exe",
+        "taskmgr": "taskmgr.exe",
+        "settings": "ms-settings:",
+        "snipping tool": "SnippingTool.exe",
+        "wordpad": "wordpad.exe",
+        "control panel": "control.exe",
+    }
+    
+    if app_name_lower in quick_apps:
+        try:
+            if quick_apps[app_name_lower].startswith("ms-"):
+                os.startfile(quick_apps[app_name_lower])
+            else:
+                subprocess.Popen(quick_apps[app_name_lower], shell=True)
+            return {"status": "success", "message": f"Launched {app_name}, sir."}
+        except Exception as e:
+            return {"status": "error", "message": f"Failed to launch {app_name}: {str(e)}"}
+
+    # 3. Search Start Menu shortcuts (.lnk files) and Desktop
+    try:
+        import glob as _glob
+        user_profile = os.environ.get("USERPROFILE", "")
+        appdata = os.environ.get("APPDATA", "")
+        programdata = os.environ.get("PROGRAMDATA", "C:\\ProgramData")
+        search_dirs = []
+        if user_profile:
+            search_dirs.append(os.path.join(
+                user_profile, "AppData", "Roaming", "Microsoft",
+                "Windows", "Start Menu", "Programs"))
+        if appdata:
+            search_dirs.append(os.path.join(
+                appdata, "Microsoft", "Windows", "Start Menu", "Programs"))
+        search_dirs.append(os.path.join(
+            programdata, "Microsoft", "Windows", "Start Menu", "Programs"))
+        needle = re.sub(r"[^a-z0-9]+", "", app_name_lower)
+        for directory in search_dirs:
+            pattern = os.path.join(directory, "**", "*.lnk")
+            try:
+                shortcuts = _glob.glob(pattern, recursive=True)
+            except Exception:
+                continue
+            for shortcut in shortcuts:
+                base = os.path.splitext(os.path.basename(shortcut))[0]
+                flat = re.sub(r"[^a-z0-9]+", "", base.lower())
+                if needle and (needle in flat or flat in needle):
+                    try:
+                        os.startfile(shortcut)
+                        return {"status": "success",
+                                "message": f"Launched {base}, sir."}
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+
+    # 4. Anything on PATH (chrome, code, spotify, ...)
+    try:
+        import shutil as _shutil
+        exe = _shutil.which(app_name_lower) or _shutil.which(app_name.strip())
+        if exe:
+            subprocess.Popen([exe], shell=False,
+                             stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL)
+            return {"status": "success",
+                    "message": f"Launched {app_name}, sir."}
+    except Exception:
+        pass
+
+    return {"status": "error",
+            "message": f"I couldn't find an app called '{app_name}', sir. "
+                       f"Try the exact name as it appears in your Start Menu."}
+
+
+def open_folder(target: str) -> dict:
+    """Open a well-known folder (Downloads, Documents, Desktop, ...) or an
+    explicit path in File Explorer. Never executes anything — folders only."""
+    try:
+        name = (target or "").strip().strip("\"'")
+        lowered = name.lower()
+        profile = os.environ.get("USERPROFILE", "") or os.path.expanduser("~")
+
+        aliases = {
+            "downloads": os.path.join(profile, "Downloads"),
+            "download": os.path.join(profile, "Downloads"),
+            "documents": os.path.join(profile, "Documents"),
+            "document": os.path.join(profile, "Documents"),
+            "desktop": os.path.join(profile, "Desktop"),
+            "pictures": os.path.join(profile, "Pictures"),
+            "picture": os.path.join(profile, "Pictures"),
+            "photos": os.path.join(profile, "Pictures"),
+            "music": os.path.join(profile, "Music"),
+            "videos": os.path.join(profile, "Videos"),
+            "video": os.path.join(profile, "Videos"),
+            "home": profile,
+            "profile": profile,
+            "user": profile,
+            "workspace": WORK_DIR,
+            "work files": WORK_DIR,
+            "workfiles": WORK_DIR,
+            "nexus": os.path.abspath(os.path.join(os.path.dirname(__file__))),
+            "project": os.path.abspath(os.path.join(os.path.dirname(__file__))),
+        }
+        # "my downloads folder" / "the downloads" -> "downloads"
+        for key in sorted(aliases, key=len, reverse=True):
+            if key in lowered:
+                path = aliases[key]
+                label = key
+                break
+        else:
+            path = os.path.abspath(os.path.expanduser(name)) if name else profile
+            label = path
+
+        if not os.path.isdir(path):
+            return {"status": "error",
+                    "message": f"I couldn't find the folder '{target}', sir. "
+                               f"Try Downloads, Documents, Desktop, Pictures, Music, or Videos."}
+        os.startfile(path)
+        shown = label if label in aliases else path
+        return {"status": "success",
+                "message": f"Opening your {shown} folder now, sir.",
+                "path": path}
+    except Exception as e:
+        return {"status": "error", "message": f"Couldn't open that folder, sir: {str(e)}"}
+    
+    # 3. Search Start Menu shortcuts (.lnk files)
+    search_dirs = []
+    user_profile = os.environ.get("USERPROFILE", "")
+    appdata = os.environ.get("APPDATA", "")
+    programdata = os.environ.get("PROGRAMDATA", "C:\\ProgramData")
+    
+    if user_profile:
+        search_dirs.append(os.path.join(user_profile, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs"))
+        search_dirs.append(os.path.join(user_profile, "Desktop"))
+        search_dirs.append(os.path.join(user_profile, "OneDrive", "Desktop"))
+    
+    search_dirs.append(os.path.join(programdata, "Microsoft", "Windows", "Start Menu", "Programs"))
+    
+    best_match = None
+    best_score = 0
+    
+    for search_dir in search_dirs:
+        if not os.path.exists(search_dir):
+            continue
+        for root, dirs, files in os.walk(search_dir):
+            for fname in files:
+                if fname.lower().endswith('.lnk') or fname.lower().endswith('.url'):
+                    name_no_ext = os.path.splitext(fname)[0].lower()
+                    # Score the match
+                    score = 0
+                    if app_name_lower == name_no_ext:
+                        score = 100  # Exact match
+                    elif app_name_lower in name_no_ext:
+                        score = 80 + (len(app_name_lower) / len(name_no_ext)) * 20
+                    elif all(word in name_no_ext for word in app_name_lower.split()):
+                        score = 60
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_match = os.path.join(root, fname)
+    
+    if best_match and best_score >= 50:
+        try:
+            os.startfile(best_match)
+            match_name = os.path.splitext(os.path.basename(best_match))[0]
+            return {"status": "success", "message": f"Launched {match_name}, sir."}
+        except Exception as e:
+            return {"status": "error", "message": f"Found {best_match} but failed to launch: {str(e)}"}
+    
+    # 4. Search Program Files directories for .exe files
+    program_dirs = [
+        os.environ.get("PROGRAMFILES", "C:\\Program Files"),
+        os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs") if os.environ.get("LOCALAPPDATA") else None,
+    ]
+    
+    for pdir in program_dirs:
+        if not pdir or not os.path.exists(pdir):
+            continue
+        # Only search top 2 levels deep for speed
+        for entry in os.scandir(pdir):
+            if entry.is_dir():
+                if app_name_lower in entry.name.lower():
+                    # Search for an exe inside
+                    try:
+                        for sub_entry in os.scandir(entry.path):
+                            if sub_entry.is_file() and sub_entry.name.lower().endswith('.exe'):
+                                try:
+                                    subprocess.Popen(sub_entry.path, shell=True)
+                                    return {"status": "success", "message": f"Launched {sub_entry.name} from {entry.name}, sir."}
+                                except:
+                                    pass
+                    except PermissionError:
+                        continue
+    
+    # 5. Last resort: try running the name directly (works for PATH apps)
+    try:
+        subprocess.Popen(app_name, shell=True)
+        return {"status": "success", "message": f"Attempted to launch {app_name}, sir."}
+    except Exception as e:
+        return {"status": "error", "message": f"I couldn't find an application matching '{app_name}' on your system, sir."}
+
+
+def save_generated_image(save_name: str, destination: str = "desktop") -> dict:
+    """Copy the last generated image to the Desktop or another directory with a new name."""
+    import shutil
+    
+    if not save_name:
+        return {"status": "error", "message": "No filename specified for saving the image, sir."}
+    
+    if not save_name.endswith(('.png', '.jpg', '.jpeg')):
+        save_name += '.png'
+    
+    # Find the most recent image in work_files/images
+    img_dir = os.path.join(WORK_DIR, "images")
+    if not os.path.exists(img_dir):
+        return {"status": "error", "message": "No images have been generated yet, sir."}
+    
+    # Get most recent image file
+    image_files = [f for f in os.listdir(img_dir) if f.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    if not image_files:
+        return {"status": "error", "message": "No generated images found in the workspace, sir."}
+    
+    image_files.sort(key=lambda f: os.path.getmtime(os.path.join(img_dir, f)), reverse=True)
+    latest_image = os.path.join(img_dir, image_files[0])
+    
+    # Determine destination path
+    if destination.lower() == "desktop":
+        dest_dir = get_desktop_path()
+    else:
+        dest_dir = WORK_DIR
+    
+    dest_path = os.path.join(dest_dir, save_name)
+    
+    try:
+        shutil.copy2(latest_image, dest_path)
+        return {"status": "success", "message": f"Image saved as {save_name} to {os.path.basename(dest_dir)}, sir.", "path": dest_path}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to save image: {str(e)}"}
+
+
+# ===== NEW CAPABILITIES =====
+
+def shutdown_pc(delay_seconds: int = 0) -> dict:
+    """Shutdown the PC immediately or after a delay in seconds."""
+    try:
+        if delay_seconds > 0:
+            subprocess.Popen(f'shutdown /s /t {delay_seconds}', shell=True)
+            return {"status": "success", "message": f"PC will shutdown in {delay_seconds} seconds, sir."}
+        else:
+            subprocess.Popen('shutdown /s /t 10', shell=True)
+            return {"status": "success", "message": "Initiating shutdown sequence in 10 seconds, sir. All systems will power down."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to initiate shutdown: {str(e)}"}
+
+
+def restart_pc(delay_seconds: int = 0) -> dict:
+    """Restart the PC immediately or after a delay in seconds."""
+    try:
+        if delay_seconds > 0:
+            subprocess.Popen(f'shutdown /r /t {delay_seconds}', shell=True)
+            return {"status": "success", "message": f"PC will restart in {delay_seconds} seconds, sir."}
+        else:
+            subprocess.Popen('shutdown /r /t 10', shell=True)
+            return {"status": "success", "message": "Rebooting systems in 10 seconds, sir."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to initiate restart: {str(e)}"}
+
+
+def cancel_shutdown() -> dict:
+    """Cancel a pending scheduled shutdown or restart."""
+    try:
+        subprocess.Popen('shutdown /a', shell=True)
+        return {"status": "success", "message": "Shutdown/restart has been cancelled, sir."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to cancel shutdown: {str(e)}"}
+
+
+def sleep_pc() -> dict:
+    """Put the PC to sleep."""
+    try:
+        subprocess.Popen('rundll32.exe powrprof.dll,SetSuspendState 0,1,0', shell=True)
+        return {"status": "success", "message": "Initiating sleep mode, sir. Good night."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to sleep PC: {str(e)}"}
+
+
+def lock_screen() -> dict:
+    """Lock the Windows workstation immediately."""
+    try:
+        subprocess.Popen('rundll32.exe user32.dll,LockWorkStation', shell=True)
+        return {"status": "success", "message": "Workstation locked, sir. Security protocols engaged."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to lock screen: {str(e)}"}
+
+
+def get_clipboard() -> dict:
+    """Read the current contents of the Windows clipboard."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-Command', 'Get-Clipboard'],
+            capture_output=True, text=True, timeout=5
+        )
+        content = result.stdout.strip()
+        if not content:
+            return {"status": "success", "message": "Clipboard is empty, sir.", "content": ""}
+        # Truncate very long clipboard content
+        if len(content) > 500:
+            preview = content[:500] + "..."
+        else:
+            preview = content
+        return {"status": "success", "message": f"Clipboard contains: {preview}", "content": content}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to read clipboard: {str(e)}"}
+
+
+def set_clipboard(text: str) -> dict:
+    """Write text to the Windows clipboard."""
+    try:
+        result = subprocess.run(
+            ['powershell', '-NoProfile', '-Command', f'Set-Clipboard -Value "{text}"'],
+            capture_output=True, text=True, timeout=5
+        )
+        return {"status": "success", "message": f"Copied to clipboard, sir: {text[:80]}{'...' if len(text)>80 else ''}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to write to clipboard: {str(e)}"}
+
+
+def get_battery_info() -> dict:
+    """Get battery status and charge level."""
+    try:
+        battery = psutil.sensors_battery()
+        if battery is None:
+            return {"status": "success", "message": "No battery detected — this appears to be a desktop PC, sir.",
+                    "battery": {"percent": None, "plugged": True, "time_left": None}}
+        percent = round(battery.percent, 1)
+        plugged = battery.power_plugged
+        secs_left = battery.secsleft
+        if secs_left and secs_left != psutil.POWER_TIME_UNLIMITED and secs_left > 0:
+            h, m = divmod(secs_left // 60, 60)
+            time_str = f"{h}h {m}m remaining"
+        elif plugged:
+            time_str = "Fully charging" if percent < 100 else "Fully charged"
+        else:
+            time_str = "Unknown"
+        status_str = "charging" if plugged else "discharging"
+        msg = f"Battery is at {percent}% and {status_str}. {time_str}."
+        return {"status": "success", "message": msg,
+                "battery": {"percent": percent, "plugged": plugged, "time_left": time_str}}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to get battery info: {str(e)}"}
+
+
+def get_network_info() -> dict:
+    """Get IP addresses, active interfaces, and detailed internet connectivity.
+
+    Uses net_diagnostics as the single source of truth so "am I connected?"
+    distinguishes: Wi-Fi off / not joined / router-no-internet / DNS failing /
+    Google-unreachable / fully online. Extra fields are additive — the old
+    {connected, local_ip, public_ip, hostname, interfaces} shape is preserved.
+    """
+    import socket
+    import urllib.request
+    try:
+        from net_diagnostics import STATE_LABELS, get_connectivity_snapshot
+        snap = get_connectivity_snapshot()
+        state = snap.get("state", "wifi_off")
+        ssid = snap.get("ssid", "")
+        local_ips = snap.get("local_ips", [])
+
+        hostname = socket.gethostname()
+        try:
+            local_ip = socket.gethostbyname(hostname)
+        except Exception:
+            local_ip = local_ips[0] if local_ips else "Unknown"
+
+        interfaces = {k: (v["addrs"][0] if v.get("addrs") else "?")
+                      for k, v in snap.get("interfaces", {}).items()}
+
+        # Public IP — only attempted when basic internet routing works.
+        public_ip = "Unknown"
+        if snap.get("internet"):
+            try:
+                with urllib.request.urlopen('https://api.ipify.org', timeout=3) as r:
+                    public_ip = r.read().decode('utf-8').strip()
+            except Exception:
+                pass
+
+        connected = bool(snap.get("internet"))
+        internet = connected
+        online = state == "online"
+        label = STATE_LABELS.get(state, state)
+        shown_ifaces = {k: v for k, v in interfaces.items() if not v.startswith("169.254.")}
+        iface_str = ", ".join(f"{k}: {v}" for k, v in list(shown_ifaces.items())[:3])
+
+        if state == "wifi_off":
+            msg = ("Network status: Offline, sir — no active Wi-Fi or Ethernet adapter. "
+                   "Please check the Wi-Fi switch, airplane mode, or cable.")
+        elif state == "disconnected":
+            msg = ("Network status: Offline, sir — not joined to any network (no valid IP). "
+                   "Please connect to a Wi-Fi network first.")
+        elif state == "local_only":
+            where = f" ({ssid}, {local_ip})" if ssid else f" ({local_ip})"
+            msg = (f"Network status: Connected to your router{where}, sir, but the router "
+                   f"has no internet. Public IP: {public_ip}. Active interfaces: {iface_str or 'None'}. "
+                   "Check the router's WAN light or reboot it.")
+        elif state == "no_dns":
+            msg = (f"Network status: Connected with internet routing, sir, but DNS resolution is failing. "
+                   f"Local IP: {local_ip}. Public IP: {public_ip}. Try DNS 8.8.8.8 or disable VPN filters.")
+        elif state == "gemini_unreachable":
+            msg = (f"Network status: Internet is working, sir (Local IP: {local_ip}, Public IP: {public_ip}), "
+                   "but Google's API edge is unreachable — possible Google outage, firewall, or ISP block. "
+                   "Local controls still work; cloud reasoning will fail until it clears.")
+        else:
+            msg = (f"Network status: Online and connected, sir. Local IP: {local_ip}. Public IP: {public_ip}. "
+                   f"Active interfaces: {iface_str or 'None detected'}.")
+        return {
+            "status": "success",
+            "message": msg,
+            "network": {
+                "connected": connected,
+                "internet": internet,
+                "online": online,
+                "state": state,
+                "state_label": label,
+                "ssid": ssid,
+                "dns": bool(snap.get("dns")),
+                "gemini_reachable": bool(snap.get("gemini_reachable")),
+                "local_ip": local_ip,
+                "local_ips": local_ips,
+                "public_ip": public_ip,
+                "hostname": hostname,
+                "interfaces": interfaces
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to get network info: {str(e)}"}
+
+
+_DAY_WORDS = ("today", "tomorrow", "day after tomorrow")
+
+
+def _rain_verdict(chances: list) -> str:
+    """One-line umbrella advice from hourly rain chances (0-100)."""
+    try:
+        peak = max([int(c) for c in chances] or [0])
+    except (ValueError, TypeError):
+        return ""
+    if peak >= 60:
+        return f"Rain is likely (up to {peak}%) — carry an umbrella."
+    if peak >= 30:
+        return f"Some chance of rain (up to {peak}%) — an umbrella is worth it."
+    return "No meaningful rain expected."
+
+
+def get_weather(city: str, day: int = 0) -> dict:
+    """Current + 3-day forecast via wttr.in (free, no key).
+
+    day: 0 = today, 1 = tomorrow, 2 = day after. Returns the day's
+    high/low, dominant conditions, rain verdict, plus today's sunrise/
+    sunset and current conditions. Never raises.
+    """
+    import urllib.request
+    import urllib.parse
+    try:
+        try:
+            day = max(0, min(2, int(day)))
+        except (TypeError, ValueError):
+            day = 0
+        city_encoded = urllib.parse.quote((city or "").strip() or "auto")
+        url = f"https://wttr.in/{city_encoded}?format=j1"
+        req = urllib.request.Request(url, headers={"User-Agent": "NEXUS/1.0"})
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = __import__('json').loads(r.read().decode('utf-8'))
+
+        area = (data.get('nearest_area') or [{}])[0]
+        area_name = ((area.get('areaName') or [{}])[0].get('value') or city or "your area")
+        country = ((area.get('country') or [{}])[0].get('value') or "")
+        location_str = f"{area_name}, {country}" if country else area_name
+
+        days = data.get('weather') or []
+        if not days:
+            raise ValueError("no forecast data")
+        target = days[min(day, len(days) - 1)]
+        day_label = _DAY_WORDS[min(day, len(days) - 1)] if len(days) > 1 else "today"
+
+        max_c, min_c = target.get('maxtempC', '?'), target.get('mintempC', '?')
+        hourly = target.get('hourly') or []
+        chances, descs = [], []
+        for h in hourly:
+            try:
+                chances.append(int(h.get('chanceofrain', 0)))
+            except (ValueError, TypeError):
+                pass
+            d = ((h.get('weatherDesc') or [{}])[0].get('value') or "").strip()
+            if d:
+                descs.append(d)
+        # Dominant description = most common across the day's slots.
+        dominant = ""
+        if descs:
+            dominant = max(set(descs), key=descs.count)
+        verdict = _rain_verdict(chances)
+
+        astro = (target.get('astronomy') or [{}])[0]
+        sunrise, sunset = astro.get('sunrise', ''), astro.get('sunset', '')
+
+        if day == 0:
+            current = (data.get('current_condition') or [{}])[0]
+            temp_c = current.get('temp_C', '?')
+            feels_c = current.get('FeelsLikeC', '?')
+            humidity = current.get('humidity', '?')
+            wind_kmph = current.get('windspeedKmph', '?')
+            now_desc = ((current.get('weatherDesc') or [{}])[0].get('value') or dominant or "").strip()
+            msg = (f"Weather in {location_str} right now: {now_desc}, {temp_c}°C (feels {feels_c}°C). "
+                   f"Today's range {min_c}–{max_c}°C, humidity {humidity}%, wind {wind_kmph} km/h. {verdict}")
+            if sunrise and sunset:
+                msg += f" Sunrise {sunrise}, sunset {sunset}."
+            payload = {"location": location_str, "description": now_desc,
+                       "temp_c": temp_c, "feels_like_c": feels_c,
+                       "humidity": humidity, "wind_kmph": wind_kmph,
+                       "today_high_c": max_c, "today_low_c": min_c,
+                       "rain_verdict": verdict}
+        else:
+            msg = (f"{day_label.capitalize()} in {location_str}: {dominant or 'mixed skies'}, "
+                   f"high {max_c}°C, low {min_c}°C. {verdict}")
+            payload = {"location": location_str, "description": dominant,
+                       "day": day_label, "high_c": max_c, "low_c": min_c,
+                       "rain_verdict": verdict}
+        # Attach the full 3-day outlook for follow-ups ("and tomorrow?").
+        try:
+            payload["forecast"] = [
+                {"day": _DAY_WORDS[i] if i < len(_DAY_WORDS) else f"day+{i}",
+                 "high_c": d.get('maxtempC'), "low_c": d.get('mintempC')}
+                for i, d in enumerate(days[:3])
+            ]
+        except Exception:
+            pass
+        return {"status": "success", "message": msg.strip(), "weather": payload}
+    except Exception as e:
+        return {"status": "error", "message": f"Couldn't retrieve weather for '{city}', sir. Check the city name or your connection. ({str(e)})"}
+
+
+def get_datetime_info() -> dict:
+    """Return current local date, time, day of week, and timezone info."""
+    from datetime import datetime
+    import time
+    now = datetime.now()
+    tz_name = time.tzname[time.daylight] if time.daylight else time.tzname[0]
+    day_name = now.strftime('%A')
+    date_str = now.strftime('%B %d, %Y')
+    time_str = now.strftime('%I:%M %p')
+    msg = f"It is {day_name}, {date_str} at {time_str} ({tz_name}), sir."
+    return {
+        "status": "success",
+        "message": msg,
+        "datetime": {
+            "day": day_name,
+            "date": date_str,
+            "time": time_str,
+            "timezone": tz_name,
+            "iso": now.isoformat()
+        }
+    }
+
+
+def open_url(url: str) -> dict:
+    """Open any URL directly in the default browser."""
+    import webbrowser
+    try:
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+        webbrowser.open(url)
+        return {"status": "success", "message": f"Opened {url} in your browser, sir."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to open URL: {str(e)}"}
+
+def type_text(text: str) -> dict:
+    """Type out a string of text simulating a keyboard."""
+    try:
+        # Import here just to be safe, though pyautogui is imported at the top
+        import pyautogui
+        pyautogui.write(text, interval=0.01)
+        return {"status": "success", "message": f"Typed text: {text[:20]}..."}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to type text: {str(e)}"}
+
+def press_key(key: str, modifiers: list = None) -> dict:
+    """Press a specific key, optionally with modifiers like ctrl or shift."""
+    try:
+        import pyautogui
+        if modifiers:
+            # Using hotkey for modified keypresses (e.g., ctrl+c)
+            pyautogui.hotkey(*modifiers, key)
+            mod_str = "+".join(modifiers)
+            return {"status": "success", "message": f"Pressed {mod_str}+{key}"}
+        else:
+            pyautogui.press(key)
+            return {"status": "success", "message": f"Pressed key {key}"}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to press key {key}: {str(e)}"}
+
+def archive_document_artifact(file_path: str) -> str:
+    """Copy a generated file (DOCX, PPTX, PDF, images, etc.) into work_files/documents
+    (or work_files subfolders) so it appears persistently in the NEXUS files & album gallery."""
+    try:
+        if not file_path or not os.path.isfile(file_path):
+            return ""
+        norm_file = os.path.abspath(file_path)
+        norm_work = os.path.abspath(WORK_DIR)
+
+        # If already inside WORK_DIR, no need to copy
+        if norm_file.startswith(norm_work):
+            return norm_file
+
+        ext = os.path.splitext(norm_file)[1].lower()
+        if ext in (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".gif"):
+            target_dir = os.path.join(WORK_DIR, "images")
+        else:
+            target_dir = os.path.join(WORK_DIR, "documents")
+
+        os.makedirs(target_dir, exist_ok=True)
+        dest_path = os.path.join(target_dir, os.path.basename(norm_file))
+        shutil.copy2(norm_file, dest_path)
+        return dest_path
+    except Exception as e:
+        print(f"[archive_document_artifact] Error archiving {file_path}: {e}")
+        return ""

@@ -1,0 +1,69 @@
+/* ══════════════════════════════════════════════════════
+   QUERY RESULT TABLE (Zetaris)
+   ══════════════════════════════════════════════════════ */
+.query-result-table {
+    margin-top: 8px;
+    border: 1px solid rgba(67, 217, 255, .15);
+    border-radius: 2px;
+    background: rgba(0, 0, 0, .2);
+    overflow: hidden;
+    max-width: 100%;
+}
+.query-result-table .table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    font: 9px var(--font-mono);
+    color: var(--cyan);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(67, 217, 255, .1);
+    background: rgba(67, 217, 255, .03);
+}
+.query-result-table .query-token {
+    color: var(--text-faint);
+    font-size: 8px;
+}
+.query-result-table .table-container {
+    overflow: auto;
+    max-height: 300px;
+}
+.query-result-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font: 11px var(--font-mono);
+    color: var(--text);
+}
+.query-result-table th,
+.query-result-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(25, 51, 72, .7);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+.query-result-table th {
+    color: var(--cyan);
+    font-weight: 600;
+    background: rgba(67, 217, 255, .05);
+    border-bottom: 1px solid rgba(67, 217, 255, .2);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.query-result-table td {
+    color: var(--text-dim);
+}
+.query-result-table tr:hover td {
+    background: rgba(67, 217, 255, .04);
+}
+.query-result-table .table-truncated {
+    padding: 6px 10px;
+    font: 9px var(--font-mono);
+    color: var(--text-faint);
+    text-align: right;
+    border-top: 1px solid rgba(67, 217, 255, .1);
+}

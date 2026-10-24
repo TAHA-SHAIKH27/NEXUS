@@ -1,0 +1,101 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# Environment variables / secrets
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
+.next/
+out/
+
+# Python virtual environment
+venv/
+env/
+.venv/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS-generated files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE files
+.vscode/
+.idea/
+*.swp
+
+# Misc
+.cache/
+.parcel-cache/
+.pytest_cache/
+
+
+whisper.cpp/
+ws-scrcpy/
+client_secret.json
+config.json
+
+# Local NEXUS working data
+.backup/
+downloads/
+work_files/
+
+# Phase 2 persistent memory database (local runtime data, survives restarts)
+backend/data/nexus_memory.db*
+
+# Gmail watcher: private VIP list, seen-state, and OAuth token (never commit)
+backend/data/gmail_watch.json
+backend/data/gmail_seen.json
+token_gmail.json
+token.json
+
+# Knowledge engine rotation state (runtime data, survives restarts)
+backend/data/knowledge_rotation.json
+
+# Normal-mode scheduler: private message content + personal reminders (never commit)
+backend/data/scheduled_whatsapp.json
+backend/data/reminders.json
+backend/data/notifications.json
+
+# Durable task checkpoints / universal history (local runtime data, survives restarts)
+nexus_tasks.db*
+jarvis_tasks.db*
+backend/data/session_memory.json
+backend/data/current_session_memory.json
+backend/data/conversation_context.json
+backend/data/persistent_memory.json
+backend/data/last_audit.json
+
+# Personal notes/todos panels (local runtime data, survives restarts)
+notes.json
+todos.json
+
+# Internal planning docs (never commit)
+CINEMATIC_STARTUP_PLAN.md
+IMPLEMENTATION_PLAN.md
+NEXUS_IMPLEMENTATION_PLAN.md
+NOTIFICATION_CENTER_PLAN.md
+NEXUS_Master_Plan.docx
+
+# One-off dev scratch scripts (never commit)
+check-braces3.cjs
+
+# Startup crash reports + repaired-file archive (per-incident user artifacts)
+STARTUP CRASH/
+FIXED CRASH FILE/
+# Local authentication credentials
+client_secret.json
+token_gmail.json
+token.json
+venv/
+backend/data/*.db
+backend/data/*.sqlite
+backend/data/*.sqlite3
