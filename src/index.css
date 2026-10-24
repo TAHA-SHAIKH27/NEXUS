@@ -96,7 +96,7 @@ input:focus-visible {
 }
 
 .wordmark:before {
-   content: '◈';
+   content: '';
    color: var(--cyan);
    margin-right: 10px
 }
@@ -742,15 +742,15 @@ input:focus-visible {
 
 @keyframes spin {
    to {
-      transform: rotate(360deg)
+      transform: rotate(360deg);
    }
 }
 
-/* ═══════════════════════════════════════════════════════
+/* 
    CHATGPT-STYLE THINKING BUBBLE (in-transcript progress)
-   Reading prompt → Thinking → Writing answer, with a live
+   Reading prompt  Thinking  Writing answer, with a live
    spinner + bouncing dots + shimmer. Streams the current step into .thinking-detail.
-   ═══════════════════════════════════════════════════════ */
+    */
 .bubble.nexus.thinking {
    border-style: dashed;
    border-color: rgba(67, 217, 255, .35);
@@ -847,12 +847,12 @@ input:focus-visible {
    .typing-caret { animation: none; }
 }
 
-/* ═══════════════════════════════════════════════════════
+/* 
    NOTIFICATION CENTER // REMINDER BAR // BADGE
    Glass/cinematic language matched to the NEXUS HUD.
-   ═══════════════════════════════════════════════════════ */
+    */
 
-/* ── Header notification button + unread badge ── */
+/*  Header notification button + unread badge  */
 .notif-btn { position: relative; }
 .notif-badge {
   position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px;
@@ -864,7 +864,7 @@ input:focus-visible {
 }
 @keyframes notif-badge-in { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: none; } }
 
-/* ── Reminder bar (above Quick Directives) ── */
+/*  Reminder bar (above Quick Directives)  */
 .reminder-bar {
   display: flex; align-items: center; gap: 8px; padding: 10px 12px;
   background: linear-gradient(135deg, rgba(67,217,255,.10), rgba(8,14,22,.66));
@@ -902,7 +902,7 @@ input:focus-visible {
 .reminder-bar-btn.danger { color: var(--text-dim); border-color: var(--line); background: transparent; }
 .reminder-bar-btn.danger:hover:not(:disabled) { color: var(--red); border-color: var(--red); background: rgba(255,98,117,.08); box-shadow: none; }
 
-/* ── Notification Center overlay ── */
+/*  Notification Center overlay  */
 .notif-center-overlay {
   position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
   background: rgba(2,4,8,.72); backdrop-filter: blur(8px); padding: 20px;
@@ -1680,9 +1680,9 @@ input:focus-visible {
    }
 }
 
-/* ═══════════════════════════════════════════════════════
-   FULL-PAGE OVERLAY — shared by PhoneMirrorPage & GalleryPage
-   ═══════════════════════════════════════════════════════ */
+/* 
+   FULL-PAGE OVERLAY  shared by PhoneMirrorPage & GalleryPage
+    */
 .fullpage-overlay {
    position: fixed;
    inset: 0;
@@ -1705,7 +1705,7 @@ input:focus-visible {
    }
 }
 
-/* ── Top bar ── */
+/*  Top bar  */
 .fp-topbar {
    height: 56px;
    display: flex;
@@ -1750,7 +1750,7 @@ input:focus-visible {
    justify-content: center
 }
 
-/* ── Mirror status ── */
+/*  Mirror status  */
 .mirror-status-bar {
    display: flex;
    align-items: center;
@@ -1765,9 +1765,9 @@ input:focus-visible {
    flex-shrink: 0
 }
 
-/* ═══════════════════════════════════════════════════════
+/* 
    PHONE MIRRORING PAGE
-   ═══════════════════════════════════════════════════════ */
+    */
 .fp-body {
    flex: 1;
    min-height: 0;
@@ -1825,7 +1825,7 @@ input:focus-visible {
    box-shadow: 0 0 20px rgba(255, 98, 117, .2)
 }
 
-/* Phone stream container — wider for ws-scrcpy */
+/* Phone stream container  wider for ws-scrcpy */
 .phone-stream-container {
    display: flex;
    flex-direction: column;
@@ -1966,9 +1966,9 @@ input:focus-visible {
    text-align: center
 }
 
-/* ═══════════════════════════════════════════════════════
+/* 
    GALLERY / FILES PAGE
-   ═══════════════════════════════════════════════════════ */
+    */
 .gallery-body {
    flex: 1;
    min-height: 0;
@@ -2272,7 +2272,7 @@ input:focus-visible {
    margin-top: 6px
 }
 
-/* ── Lightbox ── */
+/*  Lightbox  */
 .lightbox-overlay {
    position: fixed;
    inset: 0;
@@ -2386,7 +2386,7 @@ input:focus-visible {
    flex-shrink: 0
 }
 
-/* ── Startup Code Check Banner ── */
+/*  Startup Code Check Banner  */
 .startup-banner {
    margin: 10px 12px 0;
    padding: 12px 14px;
@@ -2574,75 +2574,77 @@ input:focus-visible {
 
 @keyframes spin {
    to {
-      transform: rotate(360deg)
+      transform: rotate(360deg);
    }
-}/ *   � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " �  
-       Q U E R Y   R E S U L T   T A B L E   ( Z e t a r i s )  
-       � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " � � " �   * /  
- . q u e r y - r e s u l t - t a b l e   {  
-         m a r g i n - t o p :   8 p x ;  
-         b o r d e r :   1 p x   s o l i d   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 1 5 ) ;  
-         b o r d e r - r a d i u s :   2 p x ;  
-         b a c k g r o u n d :   r g b a ( 0 ,   0 ,   0 ,   . 2 ) ;  
-         o v e r f l o w :   h i d d e n ;  
-         m a x - w i d t h :   1 0 0 % ;  
- }  
- . q u e r y - r e s u l t - t a b l e   . t a b l e - h e a d e r   {  
-         d i s p l a y :   f l e x ;  
-         j u s t i f y - c o n t e n t :   s p a c e - b e t w e e n ;  
-         a l i g n - i t e m s :   c e n t e r ;  
-         p a d d i n g :   6 p x   1 0 p x ;  
-         f o n t :   9 p x   v a r ( - - f o n t - m o n o ) ;  
-         c o l o r :   v a r ( - - c y a n ) ;  
-         l e t t e r - s p a c i n g :   . 1 e m ;  
-         t e x t - t r a n s f o r m :   u p p e r c a s e ;  
-         b o r d e r - b o t t o m :   1 p x   s o l i d   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 1 ) ;  
-         b a c k g r o u n d :   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 0 3 ) ;  
- }  
- . q u e r y - r e s u l t - t a b l e   . q u e r y - t o k e n   {  
-         c o l o r :   v a r ( - - t e x t - f a i n t ) ;  
-         f o n t - s i z e :   8 p x ;  
- }  
- . q u e r y - r e s u l t - t a b l e   . t a b l e - c o n t a i n e r   {  
-         o v e r f l o w :   a u t o ;  
-         m a x - h e i g h t :   3 0 0 p x ;  
- }  
- . q u e r y - r e s u l t - t a b l e   t a b l e   {  
-         w i d t h :   1 0 0 % ;  
-         b o r d e r - c o l l a p s e :   c o l l a p s e ;  
-         f o n t :   1 1 p x   v a r ( - - f o n t - m o n o ) ;  
-         c o l o r :   v a r ( - - t e x t ) ;  
- }  
- . q u e r y - r e s u l t - t a b l e   t h ,  
- . q u e r y - r e s u l t - t a b l e   t d   {  
-         p a d d i n g :   6 p x   8 p x ;  
-         b o r d e r - b o t t o m :   1 p x   s o l i d   r g b a ( 2 5 ,   5 1 ,   7 2 ,   . 7 ) ;  
-         t e x t - a l i g n :   l e f t ;  
-         w h i t e - s p a c e :   n o w r a p ;  
-         o v e r f l o w :   h i d d e n ;  
-         t e x t - o v e r f l o w :   e l l i p s i s ;  
-         m a x - w i d t h :   2 0 0 p x ;  
- }  
- . q u e r y - r e s u l t - t a b l e   t h   {  
-         c o l o r :   v a r ( - - c y a n ) ;  
-         f o n t - w e i g h t :   6 0 0 ;  
-         b a c k g r o u n d :   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 0 5 ) ;  
-         b o r d e r - b o t t o m :   1 p x   s o l i d   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 2 ) ;  
-         p o s i t i o n :   s t i c k y ;  
-         t o p :   0 ;  
-         z - i n d e x :   1 ;  
- }  
- . q u e r y - r e s u l t - t a b l e   t d   {  
-         c o l o r :   v a r ( - - t e x t - d i m ) ;  
- }  
- . q u e r y - r e s u l t - t a b l e   t r : h o v e r   t d   {  
-         b a c k g r o u n d :   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 0 4 ) ;  
- }  
- . q u e r y - r e s u l t - t a b l e   . t a b l e - t r u n c a t e d   {  
-         p a d d i n g :   6 p x   1 0 p x ;  
-         f o n t :   9 p x   v a r ( - - f o n t - m o n o ) ;  
-         c o l o r :   v a r ( - - t e x t - f a i n t ) ;  
-         t e x t - a l i g n :   r i g h t ;  
-         b o r d e r - t o p :   1 p x   s o l i d   r g b a ( 6 7 ,   2 1 7 ,   2 5 5 ,   . 1 ) ;  
- }  
- 
+}
+
+
+/* 
+   QUERY RESULT TABLE (Zetaris)
+    */
+.query-result-table {
+    margin-top: 8px;
+    border: 1px solid rgba(67, 217, 255, .15);
+    border-radius: 2px;
+    background: rgba(0, 0, 0, .2);
+    overflow: hidden;
+    max-width: 100%;
+}
+.query-result-table .table-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    font: 9px var(--font-mono);
+    color: var(--cyan);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    border-bottom: 1px solid rgba(67, 217, 255, .1);
+    background: rgba(67, 217, 255, .03);
+}
+.query-result-table .query-token {
+    color: var(--text-faint);
+    font-size: 8px;
+}
+.query-result-table .table-container {
+    overflow: auto;
+    max-height: 300px;
+}
+.query-result-table table {
+    width: 100%;
+    border-collapse: collapse;
+    font: 11px var(--font-mono);
+    color: var(--text);
+}
+.query-result-table th,
+.query-result-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(25, 51, 72, .7);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 200px;
+}
+.query-result-table th {
+    color: var(--cyan);
+    font-weight: 600;
+    background: rgba(67, 217, 255, .05);
+    border-bottom: 1px solid rgba(67, 217, 255, .2);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+.query-result-table td {
+    color: var(--text-dim);
+}
+.query-result-table tr:hover td {
+    background: rgba(67, 217, 255, .04);
+}
+.query-result-table .table-truncated {
+    padding: 6px 10px;
+    font: 9px var(--font-mono);
+    color: var(--text-faint);
+    text-align: right;
+    border-top: 1px solid rgba(67, 217, 255, .1);
+}
