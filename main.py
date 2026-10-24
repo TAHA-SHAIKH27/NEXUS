@@ -214,7 +214,6 @@ def load_config() -> dict:
                 data.setdefault("nvidia_model", "z-ai/glm-5.3-flash")
                 # Zetaris config (all optional; org_id is required for API calls)
                 data.setdefault("zetaris_rest_url", "http://localhost:8888/api/v1.0")
-                data.setdefault("zetaris_auth_url", "http://localhost:8889")
                 data.setdefault("zetaris_org_id", "")
                 data.setdefault("zetaris_api_key", "")
                 data.setdefault("zetaris_username", "")
@@ -233,7 +232,6 @@ def load_config() -> dict:
         "nvidia_api_key": "",
         "nvidia_model": "z-ai/glm-5.3-flash",
         "zetaris_rest_url": "http://localhost:8888/api/v1.0",
-        "zetaris_auth_url": "http://localhost:8889",
         "zetaris_org_id": "",
         "zetaris_api_key": "",
         "zetaris_username": "",
@@ -304,7 +302,6 @@ class ConfigModel(BaseModel):
     nvidia_model: Optional[str] = "z-ai/glm-5.3-flash"
     # Zetaris config
     zetaris_rest_url: Optional[str] = "http://localhost:8888/api/v1.0"
-    zetaris_auth_url: Optional[str] = "http://localhost:8889"
     zetaris_org_id: Optional[str] = ""
     zetaris_api_key: Optional[str] = ""
     zetaris_username: Optional[str] = ""
@@ -378,7 +375,6 @@ def post_config(req: ConfigModel):
         "nvidia_api_key": req.nvidia_api_key or "",
         "nvidia_model": req.nvidia_model or "z-ai/glm-5.3-flash",
         "zetaris_rest_url": req.zetaris_rest_url or "http://localhost:8888/api/v1.0",
-        "zetaris_auth_url": req.zetaris_auth_url or "http://localhost:8889",
         "zetaris_org_id": req.zetaris_org_id or "",
         "zetaris_api_key": req.zetaris_api_key or "",
         "zetaris_username": req.zetaris_username or "",
@@ -1124,6 +1120,12 @@ async def read_status():
     return {"status": "online", "system": "N.E.X.U.S.", "message": "All systems operational, sir."}
 
 
+@app.get("/health")
+def read_health():
+    return {"status": "ok"}
+
+
+
 @app.get("/api/network/status")
 def network_status():
     """Live connectivity snapshot for the HUD (cached ~10s in net_diagnostics).
@@ -1674,14 +1676,14 @@ def process_command(req: CommandRequest):
     except Exception as exc:
         print(f"[zetaris] handler failed: {exc}")
 
-      # ── Agricultural FPO connector ──────────────────────────────────────────
-      try:
-          from backend.tools import fpo_analytics as _fpo
-          _fpo_result = _fpo.handle_fpo_agent_command(req.prompt)
-          if _fpo_result is not None:
-              return _fpo_result
-      except Exception as exc:
-          print(f"[fpo] handler failed: {exc}")
+    # ── Agricultural FPO connector ──────────────────────────────────────────
+    try:
+        from backend.tools import fpo_analytics as _fpo
+        _fpo_result = _fpo.handle_fpo_agent_command(req.prompt)
+        if _fpo_result is not None:
+            return _fpo_result
+    except Exception as exc:
+        print(f"[fpo] handler failed: {exc}")
 
     # ── Deterministic identity memory (never LLM-dependent) ──────────────
     # "My name is Taha" / "I live in Pune" / "Pune only for weather" are
