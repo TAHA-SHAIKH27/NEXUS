@@ -214,6 +214,7 @@ def load_config() -> dict:
                 data.setdefault("nvidia_model", "z-ai/glm-5.3-flash")
                 # Zetaris config (all optional; org_id is required for API calls)
                 data.setdefault("zetaris_rest_url", "http://localhost:8888/api/v1.0")
+                data.setdefault("zetaris_auth_url", "http://localhost:8889")
                 data.setdefault("zetaris_org_id", "")
                 data.setdefault("zetaris_api_key", "")
                 data.setdefault("zetaris_username", "")
@@ -232,6 +233,7 @@ def load_config() -> dict:
         "nvidia_api_key": "",
         "nvidia_model": "z-ai/glm-5.3-flash",
         "zetaris_rest_url": "http://localhost:8888/api/v1.0",
+        "zetaris_auth_url": "http://localhost:8889",
         "zetaris_org_id": "",
         "zetaris_api_key": "",
         "zetaris_username": "",
@@ -302,6 +304,7 @@ class ConfigModel(BaseModel):
     nvidia_model: Optional[str] = "z-ai/glm-5.3-flash"
     # Zetaris config
     zetaris_rest_url: Optional[str] = "http://localhost:8888/api/v1.0"
+    zetaris_auth_url: Optional[str] = "http://localhost:8889"
     zetaris_org_id: Optional[str] = ""
     zetaris_api_key: Optional[str] = ""
     zetaris_username: Optional[str] = ""
@@ -375,6 +378,7 @@ def post_config(req: ConfigModel):
         "nvidia_api_key": req.nvidia_api_key or "",
         "nvidia_model": req.nvidia_model or "z-ai/glm-5.3-flash",
         "zetaris_rest_url": req.zetaris_rest_url or "http://localhost:8888/api/v1.0",
+        "zetaris_auth_url": req.zetaris_auth_url or "http://localhost:8889",
         "zetaris_org_id": req.zetaris_org_id or "",
         "zetaris_api_key": req.zetaris_api_key or "",
         "zetaris_username": req.zetaris_username or "",
