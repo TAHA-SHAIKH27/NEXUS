@@ -1,12 +1,12 @@
 # NEXUS — Hackathon 2026 Implementation Plan
 
-- **Date/time (UTC):** 2026-10-24 21:30 UTC
+- **Date/time (UTC):** 2026-10-25 00:05 UTC
 - **Repository:** `C:\NEXUS-GitHub-Clean\project` — NEXUS (clean GitHub repo)
-- **Git Branch:** `feature/fpo-data-quality-repair`
-- **Status:** **Phase 1 Complete (Zetaris Direct API). Phase 2 Complete (526K Realistic Records, All Validations Pass, Warehouse Capacity Fixed).**
+- **Git Branch:** `feature/nexus-ui-transformation`
+- **Status:** **Phase 1 Complete (Zetaris Direct API). Phase 2 Complete (526K Realistic Records, All Validations Pass). Phase 4 UI Complete & Live-Verified (Hybrid Agricultural Intelligence Command Centre).**
 - **Single plan file:** This is the only implementation-plan file for this work. Updated in place.
 
-**Last updated:** 2026-10-24 ~21:30 UTC — Phase 2 complete: Warehouse overcapacity eliminated. Replaced 574K unrealistic records with 526K realistic, internally consistent FPO records. All 18 validation checks pass. Zero warehouses over 100% capacity. Zetaris pipeline verified.
+**Last updated:** 2026-10-25 ~00:05 UTC — Phase 4 frontend transformation complete and verified against the live stack. New agri UI (9 pages) runs on the existing FastAPI + Zetaris + PostgreSQL pipeline with real data only: fabricated fallbacks removed, schemas aligned to the Zetaris-backed `/api/fpo/*` service, voice wiring fixed, route-level code splitting applied (main bundle 1,393 kB → 39 kB). All 7 analytics endpoints return 200 with live data through the Vite proxy; `zetaris:` diagnostics return live counts (85,000 batches / 16,000 farmers / 5,465 spoilage-risk rows).
 
 ---
 
@@ -198,6 +198,61 @@ All queries return meaningful, realistic results.
 
 ---
 
+## Phase 4: Hybrid Agricultural Intelligence Command Centre ✅ COMPLETE & LIVE-VERIFIED (2026-10-25)
+
+### Objective
+Replace the JARVIS-style Windows-assistant frontend with a dedicated agricultural intelligence UI (premium dark command centre + enterprise analytics), operating on the existing backend without touching the verified data layer.
+
+### Architecture
+- **Data flow (mandated & implemented):** React → FastAPI `/api/fpo/*` → `ZetarisClient` (Basic-Auth login → Bearer) → Zetaris datasource `NEXUS_FPO` → PostgreSQL `nexus_fpo`. No direct DB connections from the frontend; no secrets in source (gitignored `config.json` / env vars only).
+- **Backend service:** `backend/tools/fpo_analytics.py` — allowlisted ANSI-SQL templates, SELECT-only validation, row caps (100), parallel fan-out, stable JSON schemas, query-session tokens never rendered.
+- **Endpoints:** `/api/fpo/stats`, `/inventory`, `/market-prices`, `/logistics`, `/risks`, `/decisions`, `/datasources`, `/filters` + preserved `/api/command` (`zetaris:` debug commands).
+- **Shell:** React 18 + Vite 5, sidebar + top bar, hash deep-linking (`#/inventory`), per-route Suspense, preserved legacy tools (Code Core, Phone Mirror, Gallery).
+
+### Pages (9)
+| Page | Data source | Status |
+|---|---|---|
+| Overview | `/api/fpo/stats` + `/market-prices` + `/datasources` | ✅ 8 live KPIs, crop/warehouse/spoilage charts, urgent alerts, market snapshot |
+| AI Intelligence | `/api/command` (NEXUS agent + `zetaris:` debug) | ✅ 3D Core, evidence tables, sample prompts; NL routing still backend-dependent (labelled) |
+| Inventory | `/api/fpo/inventory` (server-side filters/pagination) + `/filters` | ✅ crop/FPO/status/search filters, live counts |
+| Markets | `/api/fpo/market-prices` | ✅ trends, comparison, buyers; labelled **Synthetic Demo Data** |
+| Logistics | `/api/fpo/logistics` | ✅ utilization table + route cost matrix (cost/kg derived honestly) |
+| Risk Centre | `/api/fpo/risks` | ✅ critical batches, congested warehouses, crop exposure, staleness; "estimates not confirmed losses" note |
+| Decisions & Reports | `/api/fpo/decisions` | ✅ demo scenarios + deterministic net-revenue analysis; decision engine labelled unavailable |
+| Data Sources | `/api/fpo/datasources` + `zetaris:` console | ✅ health cards, table counts, sanitized read-only diagnostics |
+| Settings | localStorage prefs | ✅ appearance/voice/preferences; no secrets editable |
+
+### Frontend honesty fixes (fake-data audit)
+- Removed ALL hardcoded fallback datasets and fabricated content: "88 batches", invented arbitrage recommendations, static "526,397 records", fake trend chips, hardcoded crop lists.
+- Field names aligned to the live service (`physical_stock_kg`, `batch_count`, `avg_price_per_quintal`, `buyer_name`, …).
+- Zetaris result rows render correctly (array-aligned columns) in AI Workspace + Data Sources; `query_token` stripped before render.
+- Loading skeletons, error states with retry, and empty states on data pages; risk levels labelled as estimates.
+
+### Performance (measured, `vite build`)
+| Metric | Before | After |
+|---|---|---|
+| Initial JS (main) | 1,393 kB (384 kB gz) | **39 kB (13 kB gz)** |
+| recharts | in main | **lazy vendor chunk (160 kB gz)** |
+| three.js | in main | **lazy vendor chunk (131 kB gz)** |
+| Page chunks | none | 9 lazy chunks (6–21 kB each) |
+
+### Live verification (2026-10-25, after Docker restart)
+- Docker stack recovered (`nexus-fpo-db`, `zetaris-api/ui/postgres/driver` healthy).
+- Zetaris login verified (platform admin credentials from gitignored config); `zetaris_ro` DB role untouched.
+- **Live counts through the full pipeline:** harvest_batches 85,000 • farmers 16,000 • v_batch_spoilage_risk 5,465 • SELECT 1 OK.
+- All 7 `/api/fpo/*` analytics endpoints → HTTP 200 with real payloads through the Vite dev proxy.
+- `zetaris: test connection` and debug query verified via `/api/command`.
+- Production build passes; secrets scan clean; `config.json` confirmed gitignored.
+
+### Remaining backend dependencies (honest gaps)
+1. **Natural-language data query router** — `/api/command` answers NL prompts via the general agent; a dedicated NL→SQL FPO router is not implemented. The UI labels sample NL prompts accordingly and provides `zetaris:` debug commands.
+2. **Decision engine (Phase 3)** — scenarios + deterministic sales analysis render; AI-generated recommendations are explicitly labelled unavailable.
+3. **Live market feeds** — current prices are synthetic; provenance badge shown.
+4. **Interactive map** — warehouses expose coordinates via `/api/fpo/logistics`; a lazy-loaded map layer is planned (Leaflet), tables functional without it.
+5. **Report persistence** — no backend storage yet; export buttons hidden until supported.
+
+---
+
 ## Security & Operational Safeguards
 
 | Safeguard | Implementation |
@@ -214,20 +269,23 @@ All queries return meaningful, realistic results.
 
 ## Test Results Summary
 
-| Category | Phase 1 | Phase 2 (Original) | Phase 2 (Corrected) |
-|---|---|---|---|
-| Unit Tests | ✅ 68 passed | — | — |
-| Regression Tests | ✅ 73 passed | — | — |
-| FK Integrity | — | ✅ 0 broken | ✅ 0 broken |
-| Data Quality | — | ✅ 0 violations | ✅ 0 violations |
-| View Functionality | — | ✅ All 8 views | ✅ All 8 views + 1 matview |
-| Demo Scenarios | — | ✅ 5 inserted | ✅ 5 inserted + 12 linked entities |
-| Read-only Role | — | ✅ Created & verified | ✅ Verified working |
-| No Future Physical Stock | — | ❌ 142M kg | ✅ 0 kg |
-| No Overselling | — | ❌ 115M kg | ✅ 0 kg |
-| Warehouse Utilization | — | ❌ 2130% avg | ✅ **82.84% avg, max 99.32%** |
-| Warehouse Overcapacity | — | ❌ 179 warehouses | ✅ **0 warehouses** |
-| Storage Type Consistency | — | ❌ 98 cold_storage without temp_control | ✅ **0 violations** |
+| Category | Phase 1 | Phase 2 (Original) | Phase 2 (Corrected) | Phase 4 (UI) |
+|---|---|---|---|---|
+| Unit Tests | ✅ 68 passed | — | — | ✅ build + schema probes pass |
+| Regression Tests | ✅ 73 passed | — | — | ✅ legacy tools preserved (Code Core / Phone / Gallery) |
+| FK Integrity | — | ✅ 0 broken | ✅ 0 broken | ✅ live analytics read-only |
+| Data Quality | — | ✅ 0 violations | ✅ 0 violations | ✅ no fabricated fallbacks (audit) |
+| View Functionality | — | ✅ All 8 views | ✅ All 8 views + 1 matview | ✅ consumed by UI views |
+| Demo Scenarios | — | ✅ 5 inserted | ✅ 5 inserted + 12 linked entities | ✅ rendered on Decisions page |
+| Read-only Role | — | ✅ Created & verified | ✅ Verified working | ✅ `zetaris_ro` untouched |
+| No Future Physical Stock | — | ❌ 142M kg | ✅ 0 kg | ✅ |
+| No Overselling | — | ❌ 115M kg | ✅ 0 kg | ✅ |
+| Warehouse Utilization | — | ❌ 2130% avg | ✅ **82.84% avg, max 99.32%** | ✅ rendered live |
+| Warehouse Overcapacity | — | ❌ 179 warehouses | ✅ **0 warehouses** | ✅ badge computed live |
+| Storage Type Consistency | — | ❌ 98 cold_storage without temp_control | ✅ **0 violations** | ✅ |
+| API Integration | — | — | — | ✅ 7/7 endpoints 200 via proxy |
+| Zetaris Pipeline | — | — | — | ✅ 85,000/16,000/5,465 live |
+| Bundle Performance | — | — | — | ✅ main 39 kB gz (was 384 kB) |
 
 ---
 
