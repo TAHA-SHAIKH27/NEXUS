@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Settings,
   Key,
@@ -252,7 +252,7 @@ export default function SettingsPage() {
                 placeholder="http://127.0.0.1:8088/v1"
               />
               <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginTop: '0.25rem' }}>
-                Auto-normalized to <host>/v1. Accepts full URLs with /chat/completions or /models.
+                Auto-normalized to {'<host>'}/v1. Accepts full URLs with /chat/completions or /models.
               </p>
             </div>
 
@@ -372,8 +372,8 @@ export default function SettingsPage() {
                 className="agri-input"
                 style={{ width: '100%' }}
               >
-                <option value="nvidia/nemotron-3.5-bolt-e4b">Nemotron 3.5 Bolt E4B — Fast reasoning / tool-calling</option>
-                <option value="nvidia/nemotron-3.5-lightning-30b-a3b">Nemotron 3.5 Lightning 30B A3B — Longer agentic FPO analysis</option>
+                <option value="nvidia/nemotron-3.5-bolt-e4b">Nemotron 3.5 Bolt E4B - Fast reasoning / tool-calling</option>
+                <option value="nvidia/nemotron-3.5-lightning-30b-a3b">Nemotron 3.5 Lightning 30B A3B - Longer agentic FPO analysis</option>
               </select>
             </div>
 
@@ -428,7 +428,7 @@ export default function SettingsPage() {
                 <ul style={{ marginTop: '0.5rem' }}>
                   {nvidiaStatus.models.map((m, i) => (
                     <li key={i} style={{ fontFamily: 'var(--font-mono)' }}>
-                      {m.label} ({m.id}) — {m.role}
+                      {m.label} ({m.id}) - {m.role}
                     </li>
                   ))}
                 </ul>
