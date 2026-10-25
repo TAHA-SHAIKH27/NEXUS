@@ -616,7 +616,47 @@ def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = 
     p = (prompt or "").lower()
     if not any(h in p for h in _DECISION_HINTS):
         return None
-    result = run_pipeline(prompt, config=config)
+    
+    cfg = config or {}
+    
+    # Create Meterless client if token is configured
+    meterless_client = None
+    try:
+        from backend.tools import meterless as meterless_mod
+        meterless_cfg = meterless_mod.MeterlessConfig.from_config_dict(cfg)
+        ok, _ = meterless_cfg.token_status()
+        if ok:
+            meterless_client = meterless_mod.MeterlessClient(meterless_cfg)
+    except Exception:
+        pass
+    
+    # Create NVIDIA client if API key is configured
+    nvidia_client = None
+    try:
+        from backend.tools import nvidia_nemotron as nvidia_mod
+        nvidia_cfg = nvidia_mod.NvidiaFpoConfig.from_config_dict(cfg)
+        if nvidia_cfg.api_key:
+            nvidia_client = nvidia_mod.NvidiaNemotronClient(nvidia_cfg)
+    except Exception:
+        pass
+    
+    # Create Zetaris client if configured
+    zetaris_client = None
+    try:
+        from backend.tools import zetaris as zetaris_mod
+        zclient, zerr = zetaris_mod.get_zetaris_client(cfg)
+        if zclient:
+            zetaris_client = zclient
+    except Exception:
+        pass
+    
+    result = run_pipeline(
+        prompt, 
+        config=cfg,
+        zetaris_client=zetaris_client,
+        meterless_client=meterless_client,
+        nvidia_client=nvidia_client,
+    )
     return {
         "speak": result["speak"],
         "speak_lang": result["speak_lang"],

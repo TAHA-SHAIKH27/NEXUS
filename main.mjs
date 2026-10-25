@@ -23,7 +23,8 @@ function createWindow() {
     win.loadFile(path.join(__dirname, "dist", "index.html"));
   } else {
     // Dev mode: load the Vite dev server
-    win.loadURL("http://localhost:3000");
+    const devPort = process.env.VITE_PORT || 5173;
+    win.loadURL(`http://localhost:${devPort}`);
     // Open DevTools in development
     win.webContents.openDevTools();
   }

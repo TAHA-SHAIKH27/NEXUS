@@ -1,0 +1,18 @@
+
+============================================================
+[HUMAN NOTIFICATION] 2026-10-24 22:34:08
+N.E.X.U.S. Recovery Engine (Nemotron) could not complete recovery.
+Error: Nemotron failed after 5 attempts. Last error: HTTP Error 401: Unauthorized
+Action Required: Manual intervention needed.
+Check recovery.log and watchdog_crash.log for details.
+============================================================
+
+
+============================================================
+[HUMAN NOTIFICATION] 2026-10-24 22:39:41
+N.E.X.U.S. Recovery Engine (Nemotron) could not complete recovery.
+Error: Nemotron failed after 5 attempts. Last error: HTTP Error 401: Unauthorized
+Action Required: Manual intervention needed.
+Check recovery.log and watchdog_crash.log for details.
+============================================================
+
