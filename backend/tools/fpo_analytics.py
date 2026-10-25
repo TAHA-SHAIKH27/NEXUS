@@ -471,7 +471,35 @@ def handle_fpo_agent_command(prompt: str) -> Optional[Dict[str, Any]]:
                 "narration_steps": ["Scanning storage nodes", "Aggregating utilization metric"]
             }
 
-    # 3. Market price queries
+    # 3. Crop quantity/availability queries
+    if any(k in p for k in ["quantity", "available", "stock", "how much", "tons", "tonnes", "in tons", "in tonnes", "total quantity", "total available"]):
+        crop = "Tomato"
+        for c in ["Tomato", "Onion", "Potato", "Grapes", "Banana", "Turmeric", "Pomegranate", "Wheat", "Soybean", "Chilli", "Cotton"]:
+            if c.lower() in p:
+                crop = c
+                break
+        res = get_inventory_batches(page=1, page_size=20, crop_name=crop)
+        if res.get("status") == "success":
+            total_kg = sum(b.get("net_available_kg", 0) for b in res.get("batches", []))
+            total_tons = total_kg / 1000
+            batch_count = res.get("total", 0)
+            lines = [f"{crop} Inventory Summary:"]
+            lines.append(f"• Total Available: {total_kg:,.0f} kg ({total_tons:.2f} tons)")
+            lines.append(f"• Active Batches: {batch_count}")
+            speak = f"Total available {crop.lower()}: {total_kg:,.0f} kilograms ({total_tons:.2f} tons) across {batch_count} batches."
+            return {
+                "speak": speak,
+                "speak_lang": "en",
+                "logs": [f"INPUT: \"{prompt}\"", "QUERY: v_batch_spoilage_risk (inventory)", f"RESULT: {total_kg:,.0f} kg {crop}"],
+                "file_data": {"type": "inventory_report", "crop": crop, "total_kg": total_kg, "total_tons": total_tons, "batch_count": batch_count, "batches": res.get("batches", [])},
+                "refresh_files": False,
+                "image_data": None,
+                "timer_data": None,
+                "clarification_needed": None,
+                "narration_steps": ["Querying inventory by crop", "Aggregating net available quantities", "Converting to tons"]
+            }
+
+    # 4. Market price queries
     if any(k in p for k in ["market", "price", "mandi", "rate", "bhav"]):
         crop = "Tomato"
         for c in ["Onion", "Potato", "Tomato", "Grapes", "Banana", "Turmeric", "Pomegranate", "Wheat", "Soybean"]:
