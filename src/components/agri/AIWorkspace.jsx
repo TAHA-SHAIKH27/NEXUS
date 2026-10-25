@@ -196,28 +196,32 @@ export default function AIWorkspace({
                 }}>
                   {m.text}
 
-                  {/* Render Structured Table / Evidence Data if present */}
+                  {/* Render Structured Table / Evidence Data if present.
+                      Zetaris returns rows as arrays aligned to `columns`. */}
                   {m.fileData && m.fileData.rows && Array.isArray(m.fileData.rows) && (
                     <div style={{ marginTop: '0.75rem', overflowX: 'auto' }}>
                       <div className="agri-table-wrapper" style={{ maxHeight: '200px' }}>
                         <table className="agri-table">
                           <thead>
                             <tr>
-                              {(m.fileData.columns || Object.keys(m.fileData.rows[0] || {})).map(col => (
-                                <th key={col}>{col}</th>
+                              {(m.fileData.columns || m.fileData.rows[0]?.map((_, i) => `col_${i + 1}`) || []).map(col => (
+                                <th key={String(col)}>{String(col)}</th>
                               ))}
                             </tr>
                           </thead>
                           <tbody>
                             {m.fileData.rows.slice(0, 10).map((r, ri) => (
                               <tr key={ri}>
-                                {(m.fileData.columns || Object.keys(r)).map(col => (
-                                  <td key={col} style={{ fontSize: '0.75rem' }}>{String(r[col] ?? '')}</td>
+                                {(Array.isArray(r) ? r : m.fileData.columns?.map(c => r[c]) ?? []).map((cell, ci) => (
+                                  <td key={ci} style={{ fontSize: '0.75rem' }}>{String(cell ?? '')}</td>
                                 ))}
                               </tr>
                             ))}
                           </tbody>
                         </table>
+                      </div>
+                      <div style={{ marginTop: '0.35rem', fontSize: '0.68rem', color: 'var(--text-faint)' }}>
+                        {m.fileData.row_count ?? m.fileData.rows.length} row(s) via Zetaris • source: NEXUS_FPO
                       </div>
                     </div>
                   )}

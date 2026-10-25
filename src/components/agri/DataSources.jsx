@@ -57,7 +57,9 @@ export default function DataSources() {
       if (res.ok) {
         const json = await res.json();
         if (json.file_data && Array.isArray(json.file_data.rows)) {
-          setQueryResult(json.file_data);
+          // Strip internal query-session tokens — never render them.
+          const { query_token, ...safeFileData } = json.file_data;
+          setQueryResult(safeFileData);
         } else if (json.speak) {
           setQueryError(json.speak);
         }
@@ -249,21 +251,26 @@ export default function DataSources() {
               <table className="agri-table">
                 <thead>
                   <tr>
-                    {(queryResult.columns || Object.keys(queryResult.rows[0] || {})).map(c => (
-                      <th key={c}>{c}</th>
+                    {(queryResult.columns || []).map((c, ci) => (
+                      <th key={`${c}-${ci}`}>{String(c)}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {(queryResult.rows || []).map((row, i) => (
-                    <tr key={i}>
-                      {(queryResult.columns || Object.keys(row)).map(col => (
-                        <td key={col} style={{ fontSize: '0.75rem' }}>
-                          {String(row[col] ?? '')}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {(queryResult.rows || []).map((row, i) => {
+                    const cells = Array.isArray(row)
+                      ? row
+                      : (queryResult.columns || []).map(col => row[col]);
+                    return (
+                      <tr key={i}>
+                        {cells.map((cell, ci) => (
+                          <td key={ci} style={{ fontSize: '0.75rem' }}>
+                            {String(cell ?? '')}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

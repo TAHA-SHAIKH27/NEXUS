@@ -27,6 +27,15 @@ export default defineConfig({
       input: {
         main: 'index.html',
       },
+      output: {
+        manualChunks: {
+          vendor_react: ['react', 'react-dom'],
+          vendor_charts: ['recharts'],
+          vendor_motion: ['framer-motion'],
+          vendor_icons: ['lucide-react'],
+          vendor_three: ['three'],
+        },
+      },
     },
   },
 

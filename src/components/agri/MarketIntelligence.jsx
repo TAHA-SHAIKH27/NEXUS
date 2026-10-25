@@ -27,11 +27,8 @@ export default function MarketIntelligence() {
   const [selectedCrop, setSelectedCrop] = useState('Tomato');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-
-  const cropsList = [
-    'Tomato', 'Onion', 'Potato', 'Grapes', 'Pomegranate',
-    'Banana', 'Turmeric', 'Chilli', 'Cotton', 'Soybean', 'Wheat'
-  ];
+  const [error, setError] = useState(null);
+  const [cropsList, setCropsList] = useState([]);
 
   useEffect(() => {
     fetchMarketData(selectedCrop);
@@ -40,15 +37,20 @@ export default function MarketIntelligence() {
   const fetchMarketData = async (crop) => {
     try {
       setLoading(true);
+      setError(null);
       const res = await fetch(`/api/fpo/market-prices?crop_name=${encodeURIComponent(crop)}`);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.status === 'success') {
-          setData(json);
+      const json = await res.json().catch(() => null);
+      if (res.ok && json && json.status === 'success') {
+        setData(json);
+        if (Array.isArray(json.available_crops) && json.available_crops.length) {
+          setCropsList(json.available_crops);
         }
+      } else {
+        setError((json && (json.message || json.error)) || `Request failed (HTTP ${res.status})`);
       }
     } catch (e) {
       console.error(e);
+      setError('Unable to retrieve market prices from Zetaris.');
     } finally {
       setLoading(false);
     }
@@ -125,6 +127,29 @@ export default function MarketIntelligence() {
           ))}
         </div>
       </div>
+
+      {/* Error state */}
+      {error && (
+        <div className="agri-card" role="alert" style={{
+          padding: '1.1rem 1.25rem',
+          borderColor: 'rgba(239, 68, 68, 0.35)',
+          background: 'rgba(239, 68, 68, 0.06)',
+          color: '#f87171',
+          fontSize: '0.85rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.65rem'
+        }}>
+          <AlertCircle size={17} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {loading && (
+        <div className="agri-card" style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-faint)', fontSize: '0.85rem' }} aria-busy="true">
+          Retrieving price observations via Zetaris…
+        </div>
+      )}
 
       {/* Charts Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(440px, 1fr))', gap: '1.25rem' }}>
@@ -212,7 +237,7 @@ export default function MarketIntelligence() {
                 <th>Primary Market</th>
                 <th>Total Orders</th>
                 <th>Total Procurement (INR)</th>
-                <th>Avg Realized Unit Price</th>
+                <th>Avg Realized Price / Quintal</th>
               </tr>
             </thead>
             <tbody>
@@ -234,15 +259,15 @@ export default function MarketIntelligence() {
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', color: 'var(--text-muted)' }}>
                         <MapPin size={13} />
-                        <span>{b.market}</span>
+                        <span>{b.market_name}</span>
                       </div>
                     </td>
                     <td style={{ color: 'var(--text-muted)' }}>{b.total_orders}</td>
                     <td style={{ fontWeight: 600, color: '#34d399' }}>
-                      ₹{parseFloat(b.total_purchase_inr || 0).toLocaleString()}
+                      ₹{parseFloat(b.total_purchase_inr || 0).toLocaleString('en-IN')}
                     </td>
                     <td style={{ fontWeight: 600, color: '#38bdf8' }}>
-                      ₹{parseFloat(b.avg_unit_price_inr || 0).toFixed(2)} / kg
+                      ₹{parseFloat(b.avg_price_per_quintal || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })} / quintal
                     </td>
                   </tr>
                 ))

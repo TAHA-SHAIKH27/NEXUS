@@ -1,36 +1,58 @@
-﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
 import './components/agri/agri-theme.css';
 
-// Agri Components
+// Agri shell components (small — kept in the main bundle)
 import AppSidebar from './components/agri/AppSidebar';
 import TopNavbar from './components/agri/TopNavbar';
-import OverviewDashboard from './components/agri/OverviewDashboard';
-import AIWorkspace from './components/agri/AIWorkspace';
-import InventoryIntelligence from './components/agri/InventoryIntelligence';
-import MarketIntelligence from './components/agri/MarketIntelligence';
-import LogisticsIntelligence from './components/agri/LogisticsIntelligence';
-import RiskCentre from './components/agri/RiskCentre';
-import DecisionsReports from './components/agri/DecisionsReports';
-import DataSources from './components/agri/DataSources';
-import SettingsPage from './components/agri/SettingsPage';
-
-// Secondary Utility Pages (Preserved)
-import CodeCorePage from './CodeCorePage';
-import PhoneMirrorPage from './PhoneMirrorPage';
-import GalleryPage from './GalleryPage';
 import NotificationCenter from './components/NotificationCenter';
+
+// Route-level code splitting: heavy pages load on demand.
+const OverviewDashboard = lazy(() => import('./components/agri/OverviewDashboard'));
+const AIWorkspace = lazy(() => import('./components/agri/AIWorkspace'));
+const InventoryIntelligence = lazy(() => import('./components/agri/InventoryIntelligence'));
+const MarketIntelligence = lazy(() => import('./components/agri/MarketIntelligence'));
+const LogisticsIntelligence = lazy(() => import('./components/agri/LogisticsIntelligence'));
+const RiskCentre = lazy(() => import('./components/agri/RiskCentre'));
+const DecisionsReports = lazy(() => import('./components/agri/DecisionsReports'));
+const DataSources = lazy(() => import('./components/agri/DataSources'));
+const SettingsPage = lazy(() => import('./components/agri/SettingsPage'));
+
+// Preserved secondary tools (also lazy — they pull heavy dependencies)
+const CodeCorePage = lazy(() => import('./CodeCorePage'));
+const PhoneMirrorPage = lazy(() => import('./PhoneMirrorPage'));
+const GalleryPage = lazy(() => import('./GalleryPage'));
 
 // Voice Integration
 import { useVoice } from './hooks/useVoice';
-import { detectLang, pickBrowserVoice } from './langDetect';
+import { pickBrowserVoice } from './langDetect';
+
+const VALID_TABS = new Set([
+  'overview', 'ai-workspace', 'inventory', 'markets', 'logistics',
+  'risk-centre', 'decisions', 'datasources', 'settings', 'code', 'phone', 'files'
+]);
+
+function readHashTab() {
+  const h = (window.location.hash || '').replace(/^#\/?/, '').trim();
+  return VALID_TABS.has(h) ? h : 'overview';
+}
+
+function PageLoader() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', flexDirection: 'column', gap: '0.8rem' }} role="status">
+      <div className="agri-skeleton" style={{ width: 220, height: 14 }} />
+      <div className="agri-skeleton" style={{ width: 140, height: 12 }} />
+      <span style={{ color: 'var(--text-faint)', fontSize: '0.78rem' }}>Loading module…</span>
+    </div>
+  );
+}
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTabState] = useState(readHashTab);
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState([
     {
       sender: 'nexus',
-      text: 'NEXUS Agricultural Intelligence Platform initialized. Grounded with 526,397 verified records across Maharashtra and Telangana. How can I assist your FPO network today?',
+      text: 'NEXUS Agricultural Intelligence Platform online. Connected to the NEXUS_FPO source via Zetaris. Ask about inventory, spoilage risk, markets or logistics.',
       time: 'Live',
       fileData: null
     }
@@ -42,6 +64,37 @@ export default function App() {
   const [centerLoading, setCenterLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [riskCount, setRiskCount] = useState(null);
+
+  // ── Hash-based deep linking (no reload, back/forward friendly) ──────────
+  useEffect(() => {
+    const onHash = () => setActiveTabState(readHashTab());
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, []);
+
+  const setActiveTab = useCallback((tab) => {
+    setActiveTabState(tab);
+    if (readHashTab() !== tab) window.location.hash = `/${tab}`;
+  }, []);
+
+  // ── Backend connection + real high-risk batch count for the sidebar ─────
+  useEffect(() => {
+    let cancelled = false;
+    const loadRiskCount = async () => {
+      try {
+        const res = await fetch('/api/fpo/stats');
+        const json = await res.json().catch(() => null);
+        if (!cancelled && res.ok && json?.status === 'success') {
+          const n = parseInt(json.overview?.high_risk_batches, 10);
+          setRiskCount(Number.isFinite(n) ? n : null);
+        }
+      } catch { /* sidebar badge simply stays neutral */ }
+    };
+    loadRiskCount();
+    const t = setInterval(loadRiskCount, 120000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [refreshKey]);
 
   // Fetch unread notifications count
   useEffect(() => {
@@ -94,12 +147,14 @@ export default function App() {
     }
   }, [voiceEnabled]);
 
-  // Command & Chat Handler
+  // Command Handler — talks to the existing NEXUS agent (/api/command),
+  // which routes explicit `zetaris: …` debug commands to the gateway.
+  const handleSendMessageRef = useRef(() => {});
+
   const handleSendMessage = async (promptText) => {
     if (!promptText || !promptText.trim() || busy) return;
     const cleanPrompt = promptText.trim();
 
-    // Append user message
     const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setMessages(prev => [...prev, {
       sender: 'user',
@@ -119,7 +174,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         const replyText = data.speak || data.message || (data.logs && data.logs.join('\n')) || 'Query processed successfully.';
-        
+
         setMessages(prev => [...prev, {
           sender: 'nexus',
           text: replyText,
@@ -149,13 +204,28 @@ export default function App() {
     }
   };
 
-  // Voice Hook integration
+  // Keep the voice hook's executor ref pointing at the latest handler.
+  useEffect(() => { handleSendMessageRef.current = handleSendMessage; });
+
+  // Voice Hook integration — the hook executes commands via its internal
+  // executeCommandRef (set below) once a final transcript is produced.
   const voiceHook = useVoice({
-    onCommand: (spoken) => {
-      handleSendMessage(spoken);
+    onTranscript: (event) => {
+      if (event && event.type === 'final' && event.text) {
+        handleSendMessageRef.current(event.text);
+      }
     },
-    enabled: voiceEnabled
+    onError: (error) => {
+      setMessages(prev => [...prev, {
+        sender: 'nexus',
+        text: `Voice error: ${error}`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
+    },
+    muted: !voiceEnabled
   });
+  const { _setExecuteCommand } = voiceHook;
+  useEffect(() => { _setExecuteCommand?.((text) => handleSendMessageRef.current(text)); });
 
   const handleManualRefresh = () => {
     setRefreshKey(k => k + 1);
@@ -169,7 +239,7 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         unreadCount={unreadCount}
-        riskCount={88}
+        riskCount={riskCount}
       />
 
       {/* Main Viewport */}
@@ -186,63 +256,65 @@ export default function App() {
           onSearchChange={setSearchQuery}
         />
 
-        {/* Dynamic Page Router */}
+        {/* Dynamic Page Router (lazy-loaded per route) */}
         <main className="nexus-page-content" key={refreshKey}>
-          {activeTab === 'overview' && (
-            <OverviewDashboard onNavigate={setActiveTab} />
-          )}
+          <Suspense fallback={<PageLoader />}>
+            {activeTab === 'overview' && (
+              <OverviewDashboard onNavigate={setActiveTab} />
+            )}
 
-          {activeTab === 'ai-workspace' && (
-            <AIWorkspace
-              messages={messages}
-              onSendMessage={handleSendMessage}
-              busy={busy}
-              voiceEnabled={voiceEnabled}
-              onToggleVoice={() => setVoiceEnabled(!voiceEnabled)}
-              voiceHook={voiceHook}
-            />
-          )}
+            {activeTab === 'ai-workspace' && (
+              <AIWorkspace
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                busy={busy}
+                voiceEnabled={voiceEnabled}
+                onToggleVoice={() => setVoiceEnabled(!voiceEnabled)}
+                voiceHook={voiceHook}
+              />
+            )}
 
-          {activeTab === 'inventory' && (
-            <InventoryIntelligence />
-          )}
+            {activeTab === 'inventory' && (
+              <InventoryIntelligence />
+            )}
 
-          {activeTab === 'markets' && (
-            <MarketIntelligence />
-          )}
+            {activeTab === 'markets' && (
+              <MarketIntelligence />
+            )}
 
-          {activeTab === 'logistics' && (
-            <LogisticsIntelligence />
-          )}
+            {activeTab === 'logistics' && (
+              <LogisticsIntelligence />
+            )}
 
-          {activeTab === 'risk-centre' && (
-            <RiskCentre onNavigate={setActiveTab} />
-          )}
+            {activeTab === 'risk-centre' && (
+              <RiskCentre onNavigate={setActiveTab} />
+            )}
 
-          {activeTab === 'decisions' && (
-            <DecisionsReports onNavigate={setActiveTab} />
-          )}
+            {activeTab === 'decisions' && (
+              <DecisionsReports onNavigate={setActiveTab} />
+            )}
 
-          {activeTab === 'datasources' && (
-            <DataSources />
-          )}
+            {activeTab === 'datasources' && (
+              <DataSources />
+            )}
 
-          {activeTab === 'settings' && (
-            <SettingsPage />
-          )}
+            {activeTab === 'settings' && (
+              <SettingsPage />
+            )}
 
-          {/* Preserved Secondary Tools */}
-          {activeTab === 'code' && (
-            <CodeCorePage onClose={() => setActiveTab('overview')} />
-          )}
+            {/* Preserved Secondary Tools */}
+            {activeTab === 'code' && (
+              <CodeCorePage onClose={() => setActiveTab('overview')} />
+            )}
 
-          {activeTab === 'phone' && (
-            <PhoneMirrorPage onClose={() => setActiveTab('overview')} />
-          )}
+            {activeTab === 'phone' && (
+              <PhoneMirrorPage onClose={() => setActiveTab('overview')} />
+            )}
 
-          {activeTab === 'files' && (
-            <GalleryPage onClose={() => setActiveTab('overview')} />
-          )}
+            {activeTab === 'files' && (
+              <GalleryPage onClose={() => setActiveTab('overview')} />
+            )}
+          </Suspense>
         </main>
       </div>
 
