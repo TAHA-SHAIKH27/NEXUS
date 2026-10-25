@@ -75,6 +75,33 @@ def validate_select_only(sql: str) -> tuple[bool, str]:
 
 # --- Configuration ---
 
+DEFAULT_ZETARIS_UI_ORIGIN = "http://localhost:3000"
+_LEGACY_INTERNAL_API_MARKERS = (":8888", "/api/v1.0")
+
+
+def resolve_zetaris_base_url(config: Optional[Dict[str, Any]] = None) -> str:
+    """Return the working UI-proxy origin (port 3000).
+
+    Settings/config historically stored `zetaris_rest_url` pointing at the
+    internal API on :8888. The verified client talks to the UI proxy on
+    :3000 (`zetaris_base_url`). Prefer the explicit UI origin; map the
+    legacy internal URL back to port 3000 instead of breaking queries.
+    """
+    cfg = config or {}
+    explicit = str(cfg.get("zetaris_base_url") or "").strip()
+    if explicit:
+        return explicit.rstrip("/")
+
+    rest = str(cfg.get("zetaris_rest_url") or "").strip()
+    if rest:
+        lowered = rest.lower()
+        if any(marker in lowered for marker in _LEGACY_INTERNAL_API_MARKERS):
+            return DEFAULT_ZETARIS_UI_ORIGIN
+        return rest.replace("/api/v1.0", "").rstrip("/") or DEFAULT_ZETARIS_UI_ORIGIN
+
+    return DEFAULT_ZETARIS_UI_ORIGIN
+
+
 @dataclass
 class ZetarisConfig:
     """Zetaris connection configuration."""
@@ -89,13 +116,13 @@ class ZetarisConfig:
     @classmethod
     def from_config_dict(cls, config: Dict[str, Any]) -> "ZetarisConfig":
         return cls(
-            base_url=config.get("zetaris_base_url", "http://localhost:3000"),
-            org_id=config.get("zetaris_org_id", ""),
-            username=config.get("zetaris_username", ""),
-            password=config.get("zetaris_password", ""),
-            default_limit=int(config.get("zetaris_default_limit", 50)),
-            max_limit=int(config.get("zetaris_max_limit", 100)),
-            timeout_seconds=int(config.get("zetaris_timeout_seconds", 30)),
+            base_url=resolve_zetaris_base_url(config),
+            org_id=str(config.get("zetaris_org_id", "") or ""),
+            username=config.get("zetaris_username", "") or "",
+            password=config.get("zetaris_password", "") or "",
+            default_limit=int(config.get("zetaris_default_limit", 50) or 50),
+            max_limit=int(config.get("zetaris_max_limit", 100) or 100),
+            timeout_seconds=int(config.get("zetaris_timeout_seconds", 30) or 30),
         )
 
     def is_configured(self) -> tuple[bool, str]:
@@ -289,6 +316,9 @@ class ZetarisClient:
 
             # Extract rows from first page
             records = start_resp.get("records") or []
+            if not columns and records and isinstance(records[0], dict):
+                columns = list(records[0].keys())
+
             for row in records:
                 if isinstance(row, dict):
                     # Records are objects with column names as keys
@@ -371,6 +401,70 @@ def get_zetaris_client(config: Dict[str, Any]) -> tuple[Optional[ZetarisClient],
     return ZetarisClient(zconfig), None
 
 
+def format_zetaris_query_reply(columns: List[str], rows: List[List[Any]]) -> tuple[str, str]:
+    """
+    Format query results into:
+    - speak: clear, human-friendly summary for TTS and UI chat
+    - log_result: informative log line with actual query values
+    """
+    count = len(rows)
+    if count == 0:
+        return "Query returned 0 row(s). No matching records were found.", "Query returned 0 row(s)"
+
+    # Single row
+    if count == 1:
+        row = rows[0]
+        # Single column (common for COUNT, SUM, AVG, MAX, MIN, single scalar)
+        if len(row) == 1:
+            val = str(row[0]) if row[0] is not None else "null"
+            if columns and columns[0]:
+                raw_col = columns[0]
+                label = raw_col.replace("_", " ").strip().title()
+                speak = f"Query returned 1 row(s) — {label}: {val}"
+                log_result = f"Query returned 1 row(s): {raw_col} = {val}"
+            else:
+                speak = f"Query returned 1 row(s): {val}"
+                log_result = f"Query returned 1 row(s): {val}"
+            return speak, log_result
+
+        # Single row, multiple columns (record detail)
+        if columns and len(columns) == len(row):
+            lines = ["Query returned 1 row(s):"]
+            log_parts = []
+            for col, val in zip(columns, row):
+                v_str = str(val) if val is not None else "null"
+                lines.append(f"• {col}: {v_str}")
+                log_parts.append(f"{col}={v_str}")
+            return "\n".join(lines), "Query returned 1 row(s): " + ", ".join(log_parts[:6])
+        else:
+            v_strs = [str(v) if v is not None else "null" for v in row]
+            return f"Query returned 1 row(s): " + ", ".join(v_strs), "Query returned 1 row(s): " + ", ".join(v_strs[:6])
+
+    # Multiple rows (2 or more)
+    preview_limit = min(count, 5)
+    lines = [f"Query returned {count} row(s):"]
+    log_samples = []
+
+    for i, r in enumerate(rows[:preview_limit], 1):
+        if columns and len(columns) == len(r):
+            if len(columns) == 1:
+                row_str = f"{columns[0]}: {r[0]}"
+            else:
+                row_str = ", ".join(f"{c}: {v}" for c, v in zip(columns, r) if v is not None)
+        else:
+            row_str = ", ".join(str(v) for v in r if v is not None)
+        lines.append(f"{i}. {row_str}")
+        if i <= 2:
+            log_samples.append(row_str)
+
+    if count > preview_limit:
+        lines.append(f"... and {count - preview_limit} more row(s)")
+
+    speak = "\n".join(lines)
+    log_result = f"Query returned {count} row(s)" + (f" (Sample: {'; '.join(log_samples)})" if log_samples else "")
+    return speak, log_result
+
+
 def handle_zetaris_command(prompt: str, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """
     Handle zetaris: commands from the main command processor.
@@ -383,12 +477,13 @@ def handle_zetaris_command(prompt: str, config: Dict[str, Any]) -> Optional[Dict
 
     Returns response dict matching /api/command format, or None if not a zetaris command.
     """
-    pl = prompt.lower().strip()
-    if not (pl.startswith("zetaris:") or pl.startswith("zetaris ")):
+    raw_prompt = prompt.strip()
+    m = re.match(r"^(?:run\s+|execute\s+)?zetaris(?::|\s+)\s*(.*)$", raw_prompt, re.IGNORECASE | re.DOTALL)
+    if not m:
         return None
 
-    # Extract the subcommand
-    cmd = pl[len("zetaris:"):].strip() if pl.startswith("zetaris:") else pl[len("zetaris "):].strip()
+    cmd_raw = m.group(1).strip()
+    cmd = cmd_raw.lower()
 
     client, err = get_zetaris_client(config)
     if err:
@@ -422,17 +517,19 @@ def handle_zetaris_command(prompt: str, config: Dict[str, Any]) -> Optional[Dict
 
     # Query execution: "query SELECT ..." or "run SELECT ..." or direct "SELECT ..."
     if cmd.startswith("query ") or cmd.startswith("run ") or _ALLOWED_START.match(cmd):
-        sql = cmd
         if cmd.startswith("query "):
-            sql = cmd[len("query "):].strip()
+            sql = cmd_raw[len("query "):].strip()
         elif cmd.startswith("run "):
-            sql = cmd[len("run "):].strip()
+            sql = cmd_raw[len("run "):].strip()
+        else:
+            sql = cmd_raw.strip()
 
         result = client.execute_query(sql)
         if result.status == "success":
             rows = result.data.get("rows", [])
-            speak = result.message
-            logs = [f"INPUT RECEIVED: \"{prompt}\"", f"ACTION: Zetaris query", f"RESULT: {speak}"]
+            columns = result.data.get("columns", [])
+            speak, result_log = format_zetaris_query_reply(columns, rows)
+            logs = [f"INPUT RECEIVED: \"{prompt}\"", f"ACTION: Zetaris query", f"RESULT: {result_log}"]
             return {
                 "speak": speak,
                 "speak_lang": "en",

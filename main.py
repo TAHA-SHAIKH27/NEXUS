@@ -212,8 +212,16 @@ def load_config() -> dict:
                 data.setdefault("groq_api_key", "")
                 data.setdefault("nvidia_api_key", "")
                 data.setdefault("nvidia_model", "z-ai/glm-5.3-flash")
+                data.setdefault("nvidia_fpo_model", "nvidia/nemotron-3.5-bolt-e4b")
+                data.setdefault("nvidia_fpo_timeout_seconds", 120)
+                data.setdefault("nvidia_fpo_max_retries", 2)
+                data.setdefault("meterless_base_url", "http://127.0.0.1:8088/v1")
+                data.setdefault("meterless_runtime_token", "")
+                data.setdefault("meterless_app_id", "nexus")
+                data.setdefault("meterless_model", "meterless/auto")
                 # Zetaris config (all optional; org_id is required for API calls)
                 data.setdefault("zetaris_rest_url", "http://localhost:8888/api/v1.0")
+                data.setdefault("zetaris_base_url", "http://localhost:3000")
                 data.setdefault("zetaris_org_id", "")
                 data.setdefault("zetaris_api_key", "")
                 data.setdefault("zetaris_username", "")
@@ -231,7 +239,15 @@ def load_config() -> dict:
         "groq_api_key": "",
         "nvidia_api_key": "",
         "nvidia_model": "z-ai/glm-5.3-flash",
+        "nvidia_fpo_model": "nvidia/nemotron-3.5-bolt-e4b",
+        "nvidia_fpo_timeout_seconds": 120,
+        "nvidia_fpo_max_retries": 2,
+        "meterless_base_url": "http://127.0.0.1:8088/v1",
+        "meterless_runtime_token": "",
+        "meterless_app_id": "nexus",
+        "meterless_model": "meterless/auto",
         "zetaris_rest_url": "http://localhost:8888/api/v1.0",
+        "zetaris_base_url": "http://localhost:3000",
         "zetaris_org_id": "",
         "zetaris_api_key": "",
         "zetaris_username": "",
@@ -300,8 +316,16 @@ class ConfigModel(BaseModel):
     groq_api_key: str = ""
     nvidia_api_key: Optional[str] = ""
     nvidia_model: Optional[str] = "z-ai/glm-5.3-flash"
-    # Zetaris config
+    nvidia_fpo_model: Optional[str] = "nvidia/nemotron-3.5-bolt-e4b"
+    nvidia_fpo_timeout_seconds: Optional[int] = 120
+    nvidia_fpo_max_retries: Optional[int] = 2
+    meterless_base_url: Optional[str] = "http://127.0.0.1:8088/v1"
+    meterless_runtime_token: Optional[str] = ""
+    meterless_app_id: Optional[str] = "nexus"
+    meterless_model: Optional[str] = "meterless/auto"
+    # Zetaris config (all optional; org_id is required for API calls)
     zetaris_rest_url: Optional[str] = "http://localhost:8888/api/v1.0"
+    zetaris_base_url: Optional[str] = "http://localhost:3000"
     zetaris_org_id: Optional[str] = ""
     zetaris_api_key: Optional[str] = ""
     zetaris_username: Optional[str] = ""
@@ -357,7 +381,7 @@ def get_config():
     # Mask secrets in response
     masked = dict(cfg)
     for key in ("gemini_api_key", "huggingface_api_key", "groq_api_key", "nvidia_api_key",
-                "zetaris_api_key", "zetaris_password"):
+                "meterless_runtime_token", "zetaris_api_key", "zetaris_password"):
         if masked.get(key):
             masked[key] = "********"
     return masked
@@ -374,7 +398,15 @@ def post_config(req: ConfigModel):
         "groq_api_key": req.groq_api_key or "",
         "nvidia_api_key": req.nvidia_api_key or "",
         "nvidia_model": req.nvidia_model or "z-ai/glm-5.3-flash",
+        "nvidia_fpo_model": req.nvidia_fpo_model or "nvidia/nemotron-3.5-bolt-e4b",
+        "nvidia_fpo_timeout_seconds": req.nvidia_fpo_timeout_seconds or 120,
+        "nvidia_fpo_max_retries": req.nvidia_fpo_max_retries or 2,
+        "meterless_base_url": req.meterless_base_url or "http://127.0.0.1:8088/v1",
+        "meterless_runtime_token": req.meterless_runtime_token or "",
+        "meterless_app_id": req.meterless_app_id or "nexus",
+        "meterless_model": req.meterless_model or "meterless/auto",
         "zetaris_rest_url": req.zetaris_rest_url or "http://localhost:8888/api/v1.0",
+        "zetaris_base_url": req.zetaris_base_url or "http://localhost:3000",
         "zetaris_org_id": req.zetaris_org_id or "",
         "zetaris_api_key": req.zetaris_api_key or "",
         "zetaris_username": req.zetaris_username or "",
@@ -385,6 +417,32 @@ def post_config(req: ConfigModel):
     })
     save_config(cfg)
     return {"status": "success", "message": "Configuration saved."}
+
+
+# ── Meterless & NVIDIA Provider Status Endpoints ───────────────────────────────
+
+class ProviderStatusRequest(BaseModel):
+    config: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/meterless/status")
+def meterless_status(req: ProviderStatusRequest):
+    """Check Meterless Runtime (Nightshift) connectivity and model availability."""
+    try:
+        from backend.tools.meterless import get_status
+        return get_status(req.config or load_config())
+    except Exception as e:
+        return {"provider": "meterless", "status": "error", "message": str(e), "live": False}
+
+
+@app.post("/api/nvidia/status")
+def nvidia_status(req: ProviderStatusRequest):
+    """Check NVIDIA NIM Nemotron (FPO adapter) connectivity and model catalog."""
+    try:
+        from backend.tools.nvidia_nemotron import get_status
+        return get_status(req.config or load_config())
+    except Exception as e:
+        return {"provider": "nvidia_nim", "status": "error", "message": str(e), "live": False}
 
 
 # ── Code Core Endpoints ─────────────────────────────────────────────────────
@@ -1120,6 +1178,12 @@ async def read_status():
     return {"status": "online", "system": "N.E.X.U.S.", "message": "All systems operational, sir."}
 
 
+@app.get("/health")
+def read_health():
+    return {"status": "ok"}
+
+
+
 @app.get("/api/network/status")
 def network_status():
     """Live connectivity snapshot for the HUD (cached ~10s in net_diagnostics).
@@ -1670,6 +1734,15 @@ def process_command(req: CommandRequest):
     except Exception as exc:
         print(f"[zetaris] handler failed: {exc}")
 
+    # ── Agricultural FPO connector ──────────────────────────────────────────
+    try:
+        from backend.tools import fpo_analytics as _fpo
+        _fpo_result = _fpo.handle_fpo_agent_command(req.prompt)
+        if _fpo_result is not None:
+            return _fpo_result
+    except Exception as exc:
+        print(f"[fpo] handler failed: {exc}")
+
     # ── Deterministic identity memory (never LLM-dependent) ──────────────
     # "My name is Taha" / "I live in Pune" / "Pune only for weather" are
     # saved here on EVERY command — even offline or rate-limited — so the
@@ -2196,6 +2269,55 @@ def serve_work_file(path: str):
     }
     media_type = mime_map.get(ext, "application/octet-stream")
     return FileResponse(full_path, media_type=media_type)
+
+
+
+# ── Agricultural FPO Analytics Endpoints ──────────────────────────────
+@app.get("/api/fpo/stats")
+def api_fpo_stats(fpo_id: Optional[str] = None, crop_name: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_overview_stats(fpo_id=fpo_id, crop_name=crop_name)
+
+@app.get("/api/fpo/inventory")
+def api_fpo_inventory(page: int = 1, page_size: int = 25, 
+                      crop_name: Optional[str] = None, 
+                      district: Optional[str] = None,
+                      risk_level: Optional[str] = None,
+                      search: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_inventory_batches(page=page, page_size=page_size, 
+                                              crop_name=crop_name, district=district,
+                                              risk_level=risk_level, search=search)
+
+@app.get("/api/fpo/market-prices")
+def api_fpo_market_prices(crop_name: Optional[str] = None, market_name: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_market_intelligence(crop_name=crop_name, market_name=market_name)
+
+@app.get("/api/fpo/logistics")
+def api_fpo_logistics():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_logistics_intelligence()
+
+@app.get("/api/fpo/risks")
+def api_fpo_risks(risk_level: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_risk_centre(risk_level=risk_level)
+
+@app.get("/api/fpo/decisions")
+def api_fpo_decisions():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_decisions_scenarios()
+
+@app.get("/api/fpo/datasources")
+def api_fpo_datasources():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_datasources_status()
+
+@app.get("/api/fpo/filters")
+def api_fpo_filters():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_filter_options()
 
 
 if __name__ == "__main__":
