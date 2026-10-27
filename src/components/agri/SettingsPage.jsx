@@ -25,6 +25,7 @@ import {
 
 export default function SettingsPage() {
   const [config, setConfig] = useState({});
+  const [savedConfig, setSavedConfig] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
@@ -45,6 +46,8 @@ export default function SettingsPage() {
       if (res.ok) {
         const json = await res.json();
         setConfig(json);
+        // Store a copy for display purposes (with masked secrets)
+        setSavedConfig(json);
       }
     } catch (e) {
       console.error(e);
@@ -66,6 +69,12 @@ export default function SettingsPage() {
       if (res.ok) {
         setSaveMsg('Configuration updated successfully!');
         setTimeout(() => setSaveMsg(''), 3000);
+        // Refresh the saved config for display
+        const res2 = await fetch('/api/config');
+        if (res2.ok) {
+          const json = await res2.json();
+          setSavedConfig(json);
+        }
       }
     } catch (e) {
       setSaveMsg(`Error: ${e.message}`);
@@ -262,7 +271,7 @@ export default function SettingsPage() {
               </label>
               <input
                 type={showKeys ? 'text' : 'password'}
-                value={config.meterless_runtime_token || ''}
+                value={config.meterless_runtime_token || (savedConfig.meterless_runtime_token ? '••••••••' : '')}
                 onChange={(e) => handleChange('meterless_runtime_token', e.target.value)}
                 className="agri-input"
                 style={{ width: '100%' }}
@@ -358,7 +367,7 @@ export default function SettingsPage() {
                 placeholder="nvapi-..."
               />
               <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginTop: '0.25rem' }}>
-                Separate from Code Core's nvidia_model (z-ai/glm-5.3-flash). FPO uses Nemotron models.
+                Separate from Code Core&apos;s nvidia_model (z-ai/glm-5.3-flash). FPO uses Nemotron models.
               </p>
             </div>
 

@@ -496,6 +496,16 @@ def classify_intent_type(text: str) -> str:
         return "net_profit"
     if any(k in text_lower for k in ("spoilage", "quality window", "perish", "shelf life", "expire", "risk")):
         return "spoilage"
+    # Specific batch detail queries (with batch code) -> batch_recommendation
+    if any(k in text_lower for k in ("batch ", " bat-", " hb-", "batch code", "batch id", "batch detail", "batch detail")):
+        return "batch_recommendation"
+    # Inventory/quantity queries (listing batches, showing inventory) -> inventory
+    if any(k in text_lower for k in ("show", "list", "inventory", "quantity", "available", "stock", "how many", "tons", "tonnes", "available stock", "available quantity", "quantity available", "batches", "all batches", "all tomato", "all onion", "all potato")):
+        return "inventory"
+    if any(k in text_lower for k in ("storage", "warehouse", "transport", "logistics", "freight", "route", "distance")):
+        return "storage_transport"
+    if any(k in text_lower for k in ("spoilage", "quality window", "perish", "shelf life", "expire", "risk")):
+        return "spoilage"
     if any(k in text_lower for k in ("storage", "warehouse", "transport", "logistics", "freight", "route", "distance")):
         return "storage_transport"
     if any(k in text_lower for k in ("batch", "recommend", "recommendation", "scn-a", "scn-b", "scn-c", "scn-d", "scn-e", "simulate")):
@@ -789,6 +799,51 @@ def build_scenario_entities_query(intent: NLParsedIntent) -> QueryPlan:
     )
 
 
+def build_inventory_query(intent: NLParsedIntent) -> QueryPlan:
+    """Build query for inventory/batch listing."""
+    conditions = []
+    params = []
+    
+    if intent.crop:
+        conditions.append("crop_name = %s")
+        params.append(intent.crop)
+    if intent.districts:
+        placeholders = ','.join(['%s'] * len(intent.districts))
+        conditions.append(f"farm_district IN ({placeholders})")
+        params.extend(intent.districts)
+    if intent.states:
+        placeholders = ','.join(['%s'] * len(intent.states))
+        conditions.append(f"farm_state IN ({placeholders})")
+        params.extend(intent.states)
+    if intent.warehouse:
+        conditions.append("(warehouse_name ILIKE %s OR warehouse_id::text ILIKE %s)")
+        params.extend([f"%{intent.warehouse}%", f"%{intent.warehouse}%"])
+    
+    where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+    
+    sql = f"""
+        SELECT 
+            batch_id, batch_code, crop_name, variety, perishability_category,
+            harvest_date, estimated_quality_window_end, days_until_quality_window_end,
+            spoilage_risk_level, harvested_quantity_kg, total_available_kg,
+            total_reserved_kg, net_available_kg, warehouse_count,
+            farm_district, farm_state
+        FROM v_batch_spoilage_risk
+        {where_clause}
+        ORDER BY harvest_date DESC, net_available_kg DESC
+        LIMIT %s
+    """
+    params.append(100)
+    
+    return QueryPlan(
+        query_type="inventory",
+        sql=sql.strip(),
+        params=params,
+        tables=["v_batch_spoilage_risk"],
+        description=f"Inventory listing for {intent.crop or 'all crops'}",
+    )
+
+
 # --- Main Query Planner ---
 
 QUERY_BUILDERS = {
@@ -797,6 +852,7 @@ QUERY_BUILDERS = {
     "net_profit": build_net_revenue_query,
     "storage_transport": build_transport_routes_query,
     "batch_recommendation": build_batch_details_query,
+    "inventory": build_inventory_query,
     "overview": build_overview_query,
     "general": build_market_prices_query,  # default
 }
@@ -910,6 +966,9 @@ def plan_and_execute(
         plans.append(build_warehouse_utilization_query(intent))
     elif intent.intent_type == "storage_transport":
         plans.append(build_market_prices_query(intent))
+    elif intent.intent_type == "inventory":
+        plans.append(build_market_prices_query(intent))
+        plans.append(build_warehouse_utilization_query(intent))
     
     # Limit queries
     plans = plans[:max_queries]

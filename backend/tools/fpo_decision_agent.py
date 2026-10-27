@@ -1,8 +1,8 @@
 """
 FPO decision intelligence pipeline.
 
-User question → intent → evidence retrieval → deterministic finance →
-optional AI explanation → validation → recommendation.
+User question -> intent -> evidence retrieval -> deterministic finance ->
+optional AI explanation -> validation -> recommendation.
 
 Numeric values come only from retrieved records and Python arithmetic.
 Language models may explain; they must not invent rupees, kg, or percents.
@@ -30,6 +30,7 @@ INTENT_NET_PROFIT = "net_profit"
 INTENT_SPOILAGE = "spoilage"
 INTENT_STORAGE_TRANSPORT = "storage_transport"
 INTENT_BATCH = "batch_recommendation"
+INTENT_INVENTORY = "inventory"
 INTENT_GENERAL = "general"
 
 REASONING_SYSTEM = (
@@ -74,6 +75,13 @@ def classify_intent(prompt: str) -> str:
         return INTENT_MARKET_SELECTION
     if any(k in p for k in ("net profit", "net margin", "net revenue", "compare profit", "profit comparison")):
         return INTENT_NET_PROFIT
+    if any(k in p for k in ("spoilage", "quality window", "perish", "shelf life", "expire")):
+        return INTENT_SPOILAGE
+    # Inventory/quantity queries should be checked BEFORE storage/transport
+    if any(k in p for k in ("show", "list", "inventory", "quantity", "available", "stock", "how many", "tons", "tonnes", "available stock", "available quantity", "quantity available", "batch", "batches")):
+        return INTENT_INVENTORY  # Treat inventory queries as inventory queries
+    if any(k in p for k in ("storage", "warehouse", "transport", "logistics", "freight")):
+        return INTENT_STORAGE_TRANSPORT
     if any(k in p for k in ("spoilage", "quality window", "perish", "shelf life", "expire")):
         return INTENT_SPOILAGE
     if any(k in p for k in ("storage", "warehouse", "transport", "logistics", "freight")):
@@ -130,39 +138,64 @@ def retrieve_evidence(
         "intent": intent,
     }
 
-    market = analytics.get_market_intelligence(crop_name=crop)
-    if market.get("status") == "success":
-        payload["market"] = market
-        sources.append(_source("postgresql", "v_crop_market_price_trends", {"crop": crop}))
-    else:
-        warnings.append(f"Market prices unavailable: {market.get('message') or 'error'}")
-        payload["market"] = {"status": "missing", "crop": crop}
+    # Use NL-to-SQL planner for Zetaris queries when client is available
+    zetaris_results = []
+    if zetaris_client is not None:
+        try:
+            from backend.tools import nl_to_sql
+            # Parse intent and create query plan
+            nl_intent = nl_to_sql.parse_natural_language(prompt)
+            plan = nl_to_sql.create_query_plan(nl_intent)
+            executor = nl_to_sql.QueryExecutor(config)
+            executor._client = zetaris_client  # Use the provided client
+            zetaris_result = executor.execute(plan)
+            if zetaris_result.get("status") == "success":
+                zetaris_results.append(zetaris_result)
+                sources.append(_source("zetaris", plan.tables[0] if plan.tables else "query", {"sql": plan.sql, "params": plan.params}))
+                # Add rows to payload for finance calculations
+                if zetaris_result.get("rows"):
+                    payload["zetaris_data"] = zetaris_result["rows"]
+                    # If we got inventory data, use it for finance calculations
+                    if plan.query_type in ("batch_details", "spoilage_risk", "overview", "inventory"):
+                        payload["zetaris_inventory"] = zetaris_result["rows"]
+        except Exception as exc:
+            warnings.append(f"Zetaris query failed: {exc}")
 
-    risks = analytics.get_risk_centre()
-    if risks.get("status") == "success":
-        payload["risks"] = risks
-        sources.append(_source("postgresql", "v_batch_spoilage_risk"))
-        sources.append(_source("postgresql", "v_warehouse_capacity_utilization"))
-    else:
-        warnings.append(f"Risk views unavailable: {risks.get('message') or 'error'}")
-        payload["risks"] = {"status": "missing"}
+    # Fallback to PostgreSQL analytics if no Zetaris data
+    if not zetaris_results:
+        market = analytics.get_market_intelligence(crop_name=crop)
+        if market.get("status") == "success":
+            payload["market"] = market
+            sources.append(_source("postgresql", "v_crop_market_price_trends", {"crop": crop}))
+        else:
+            warnings.append(f"Market prices unavailable: {market.get('message') or 'error'}")
+            payload["market"] = {"status": "missing", "crop": crop}
 
-    logistics = analytics.get_logistics_intelligence()
-    if logistics.get("status") == "success":
-        payload["logistics"] = logistics
-        sources.append(_source("postgresql", "v_transport_cost_analysis"))
-    else:
-        warnings.append(f"Logistics views unavailable: {logistics.get('message') or 'error'}")
-        payload["logistics"] = {"status": "missing"}
+        risks = analytics.get_risk_centre()
+        if risks.get("status") == "success":
+            payload["risks"] = risks
+            sources.append(_source("postgresql", "v_batch_spoilage_risk"))
+            sources.append(_source("postgresql", "v_warehouse_capacity_utilization"))
+        else:
+            warnings.append(f"Risk views unavailable: {risks.get('message') or 'error'}")
+            payload["risks"] = {"status": "missing"}
 
-    decisions = analytics.get_decisions_scenarios()
-    if decisions.get("status") == "success":
-        payload["scenarios"] = decisions
-        sources.append(_source("postgresql", "v_sales_with_transport_cost"))
-        sources.append(_source("postgresql", "demo_scenarios"))
-    else:
-        warnings.append(f"Scenario/sales views unavailable: {decisions.get('message') or 'error'}")
-        payload["scenarios"] = {"status": "missing"}
+        logistics = analytics.get_logistics_intelligence()
+        if logistics.get("status") == "success":
+            payload["logistics"] = logistics
+            sources.append(_source("postgresql", "v_transport_cost_analysis"))
+        else:
+            warnings.append(f"Logistics views unavailable: {logistics.get('message') or 'error'}")
+            payload["logistics"] = {"status": "missing"}
+
+        decisions = analytics.get_decisions_scenarios()
+        if decisions.get("status") == "success":
+            payload["scenarios"] = decisions
+            sources.append(_source("postgresql", "v_sales_with_transport_cost"))
+            sources.append(_source("postgresql", "demo_scenarios"))
+        else:
+            warnings.append(f"Scenario/sales views unavailable: {decisions.get('message') or 'error'}")
+            payload["scenarios"] = {"status": "missing"}
 
     if batch_code:
         inventory = analytics.get_inventory_batches(page=1, page_size=5, search=batch_code, crop_name=crop)
@@ -172,31 +205,7 @@ def retrieve_evidence(
         else:
             warnings.append("Batch inventory lookup failed")
 
-    if zetaris_client is not None:
-        try:
-            sql = (
-                "SELECT crop_name, spoilage_risk_level, COUNT(*) AS batch_count "
-                "FROM v_batch_spoilage_risk GROUP BY crop_name, spoilage_risk_level LIMIT 10"
-            )
-            zres = zetaris_client.execute_query(sql)
-            payload["zetaris"] = zres.to_dict() if hasattr(zres, "to_dict") else zres
-            sources.append(_source("zetaris", "v_batch_spoilage_risk"))
-        except Exception as exc:
-            warnings.append(f"Zetaris evidence skipped: {exc}")
-    elif config:
-        client, err = zetaris_mod.get_zetaris_client(config)
-        if client:
-            try:
-                sql = "SELECT 1 AS ok"
-                zres = client.execute_query(sql)
-                payload["zetaris_ping"] = zres.to_dict() if hasattr(zres, "to_dict") else {"status": getattr(zres, "status", "unknown")}
-                sources.append(_source("zetaris", "SELECT 1"))
-            except Exception as exc:
-                warnings.append(f"Zetaris ping skipped: {exc}")
-        elif err:
-            warnings.append(f"Zetaris not used: {err}")
-
-    if not sources:
+    if not sources and not zetaris_results:
         warnings.append("No evidence sources returned data")
 
     return {
@@ -207,6 +216,7 @@ def retrieve_evidence(
         "sources": sources,
         "warnings": warnings,
         "data": payload,
+        "zetaris_results": zetaris_results,
     }
 
 
@@ -253,6 +263,11 @@ def calculate_finance(evidence: Dict[str, Any]) -> Dict[str, Any]:
     data = evidence.get("data") or {}
     crop = evidence.get("crop")
     warnings = list(evidence.get("warnings") or [])
+    
+    # Check for Zetaris inventory data first
+    zetaris_inventory = data.get("zetaris_inventory") or []
+    zetaris_data = data.get("zetaris_data") or []
+    
     market = data.get("market") or {}
     logistics = data.get("logistics") or {}
     risks = data.get("risks") or {}
@@ -266,16 +281,30 @@ def calculate_finance(evidence: Dict[str, Any]) -> Dict[str, Any]:
     if route is None:
         warnings.append("No transport cost per kg available; net-of-freight figures omitted")
 
+    # Use Zetaris inventory data if available, otherwise fall back to PostgreSQL risks
     qty = Decimal("0")
     critical = []
-    if risks.get("status") == "success":
+    
+    if zetaris_inventory:
+        # Use Zetaris inventory data
+        for batch in zetaris_inventory:
+            if str(batch.get("crop_name") or "").lower() == str(crop or "").lower():
+                critical.append(batch)
+                kg = _d(batch.get("net_available_kg")) or Decimal("0")
+                qty += kg
+        if qty <= 0:
+            warnings.append("No at-risk quantity for this crop; profit totals use 0 kg")
+    elif risks.get("status") == "success":
+        # Fallback to PostgreSQL risks
         for batch in (risks.get("critical_batches") or []):
             if str(batch.get("crop_name") or "").lower() == str(crop or "").lower():
                 critical.append(batch)
                 kg = _d(batch.get("net_available_kg")) or Decimal("0")
                 qty += kg
-    if qty <= 0:
-        warnings.append("No at-risk quantity for this crop; profit totals use 0 kg")
+        if qty <= 0:
+            warnings.append("No at-risk quantity for this crop; profit totals use 0 kg")
+    else:
+        warnings.append("No inventory data available for quantity calculation")
 
     local = markets[-1] if len(markets) > 1 else (markets[0] if markets else None)
     best = markets[0] if markets else None
@@ -609,6 +638,12 @@ _DECISION_HINTS = (
     "which market", "which mandi", "net profit", "net margin",
     "recommend", "recommendation", "simulate", "decision",
     "arbitrage", "best market", "scn-a", "scn-b", "scn-c", "scn-d", "scn-e",
+    "show batches", "show inventory", "show batches", "available batches",
+    "batch quantity", "how many batches", "list batches", "tomato batches",
+    "onion batches", "potato batches", "crop quantity", "available stock",
+    "inventory", "stock level", "quantity available", "tons of", "tonnes of",
+    "compare prices", "compare tomato prices", "compare onion prices",
+    "compare potato prices", "compare prices in",
 )
 
 
