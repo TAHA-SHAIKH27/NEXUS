@@ -325,32 +325,32 @@ class DocumentAnalysisRequest(BaseModel):
     apiKey: Optional[str] = None
 
 class ConfigModel(BaseModel):
-    gemini_api_key: str
-    huggingface_api_key: str
+    gemini_api_key: Optional[str] = None
+    huggingface_api_key: Optional[str] = None
     gemini_project_id: Optional[str] = ""
-    groq_api_key: str = ""
-    nvidia_api_key: Optional[str] = ""
+    groq_api_key: Optional[str] = None
+    nvidia_api_key: Optional[str] = None
     nvidia_model: Optional[str] = "z-ai/glm-5.3-flash"
     nvidia_fpo_model: Optional[str] = "nvidia/nemotron-3.5-bolt-e4b"
     nvidia_fpo_timeout_seconds: Optional[int] = 120
     nvidia_fpo_max_retries: Optional[int] = 2
     meterless_base_url: Optional[str] = "http://127.0.0.1:8088/v1"
-    meterless_runtime_token: Optional[str] = ""
+    meterless_runtime_token: Optional[str] = None
     meterless_app_id: Optional[str] = "nexus"
     meterless_model: Optional[str] = "meterless/auto"
     # Zetaris config (all optional; org_id is required for API calls)
     zetaris_rest_url: Optional[str] = "http://localhost:8888/api/v1.0"
     zetaris_base_url: Optional[str] = "http://localhost:3000"
     zetaris_org_id: Optional[str] = ""
-    zetaris_api_key: Optional[str] = ""
+    zetaris_api_key: Optional[str] = None
     zetaris_username: Optional[str] = ""
-    zetaris_password: Optional[str] = ""
+    zetaris_password: Optional[str] = None
     zetaris_default_limit: Optional[int] = 100
     zetaris_max_limit: Optional[int] = 100
     zetaris_timeout_seconds: Optional[int] = 30
     # External API keys
-    openrouteservice_api_key: Optional[str] = ""
-    datagov_api_key: Optional[str] = ""
+    openrouteservice_api_key: Optional[str] = None
+    datagov_api_key: Optional[str] = None
     market_price_timeout: Optional[int] = 30
 
 # ── Code Core request models ────────────────────────────────────────────────
@@ -418,10 +418,10 @@ def post_config(req: ConfigModel):
     # Masked placeholder that frontend sends when field shows masked value
     MASKED_PLACEHOLDER = "********"
     
-    def clean_secret(value: str) -> str:
-        """Return empty string if value is masked placeholder, else return value."""
+    def clean_secret(value: Optional[str]) -> Optional[str]:
+        """Return None if value is masked placeholder, else return value (including empty string)."""
         if value == MASKED_PLACEHOLDER or value == "••••••••":
-            return ""
+            return None
         return value
     
     # Build update dict, only including secrets that are not masked placeholders
@@ -444,7 +444,10 @@ def post_config(req: ConfigModel):
         "market_price_timeout": req.market_price_timeout or 30,
     }
     
-    # Only update secret fields if they are not masked placeholders
+    # Only update secret fields if they are explicitly provided (not None)
+    # None = not provided by frontend (user didn't touch it)
+    # "" = explicitly cleared by user
+    # "********" = masked placeholder (user didn't change it)
     secret_fields = {
         "gemini_api_key": req.gemini_api_key,
         "huggingface_api_key": req.huggingface_api_key,
@@ -458,9 +461,11 @@ def post_config(req: ConfigModel):
     }
     
     for key, value in secret_fields.items():
-        if value and value != MASKED_PLACEHOLDER and value != "••••••••":
-            updates[key] = value
-        # If value is masked placeholder or empty, skip - preserve existing
+        cleaned = clean_secret(value)
+        if cleaned is not None:
+            # Explicitly provided (including empty string for clearing)
+            updates[key] = cleaned
+        # If value is None (not provided) or masked placeholder, skip - preserve existing
     
     cfg.update(updates)
     save_config(cfg)

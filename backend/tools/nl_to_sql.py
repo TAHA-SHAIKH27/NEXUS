@@ -468,8 +468,8 @@ def extract_states(text: str) -> List[str]:
 
 def extract_batch_code(text: str) -> Optional[str]:
     """Extract batch code (BAT-XXX or HB-XXX)."""
-    # First try with "batch " prefix
-    m = re.search(r'(?:batch\s+)?(BAT[-_A-Z0-9]+|HB[-_A-Z0-9]+)\b', text or "", re.I)
+    # First try with "batch " prefix - require separator after prefix
+    m = re.search(r'(?:batch\s+)?(BAT[-_][A-Z0-9]+|HB[-_][A-Z0-9]+)\b', text or "", re.I)
     return m.group(1) if m else None
 
 

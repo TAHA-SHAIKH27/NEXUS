@@ -132,13 +132,13 @@ export default function SettingsPage() {
 
   const handleChange = (key, val) => {
     setConfig(prev => ({ ...prev, [key]: val }));
-    // Track secret fields that user explicitly modifies
+    // Track secret fields that user explicitly modifies (including clearing them)
     const secretKeys = [
       'gemini_api_key', 'huggingface_api_key', 'groq_api_key', 'nvidia_api_key',
       'meterless_runtime_token', 'zetaris_api_key', 'zetaris_password',
       'openrouteservice_api_key', 'datagov_api_key'
     ];
-    if (secretKeys.includes(key) && val && val !== '********' && val !== '••••••••') {
+    if (secretKeys.includes(key)) {
       setModifiedSecrets(prev => new Set([...prev, key]));
     }
   };

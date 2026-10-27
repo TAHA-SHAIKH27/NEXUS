@@ -1,8 +1,7 @@
 ﻿import React, { useState, useEffect, useRef, useCallback } from 'react';
 import './components/agri/agri-theme.css';
 
-// Live dashboard stack
-import { connectNexusSocket, disconnectNexusSocket } from './socket';
+// Live dashboard stack - using REST polling (Socket.IO not implemented in backend)
 import { useNexusStore } from './store/nexusStore';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
@@ -56,35 +55,7 @@ export default function App() {
   const netState = useNexusStore((s) => s.netState);
   const setNetStateStore = useNexusStore((s) => s.setNetState);
 
-  // Socket connection for real-time push
-  useEffect(() => {
-    const sock = connectNexusSocket();
-
-    sock.on('notification', (data) => {
-      const store = useNexusStore.getState();
-      store.setNotices([...(store.notices || []), data]);
-      store.setUnreadCount(store.unreadCount + 1);
-      toast.info(data.title || 'New notification', {
-        description: data.body || data.text || '',
-        duration: 4000,
-      });
-    });
-
-    sock.on('reminder', (data) => {
-      const store = useNexusStore.getState();
-      store.setUnreadCount(store.unreadCount + 1);
-      toast.warning('Reminder', {
-        description: data.text || 'You have a pending reminder.',
-        duration: 5000,
-      });
-    });
-
-    return () => {
-      // keep socket alive for session; cleanup only on unmount
-    };
-  }, []);
-
-  // Fetch unread notifications count (poll fallback + socket push)
+  // Fetch unread notifications count (REST polling - Socket.IO not available)
   useEffect(() => {
     fetchUnreadCount();
     const interval = setInterval(fetchUnreadCount, 30000);

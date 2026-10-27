@@ -81,6 +81,11 @@ def _kg(value: Optional[Decimal]) -> Optional[float]:
 def classify_intent(prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
     p = (prompt or "").lower()
 
+    # First, check for explicit data listing patterns (show/list N batches/items)
+    # These are data retrieval queries, not decision queries
+    if any(k in p for k in ("show the", "list the", "show top", "list top", "show bottom", "list bottom")) and any(k in p for k in ("batch", "batches", "item", "items", "record", "records")):
+        return INTENT_INVENTORY
+
     # First, check for explicit intent keywords (these override context)
     if any(k in p for k in ("hold vs sell", "hold versus sell", "hold or sell", "should we sell", "should we hold")):
         return INTENT_HOLD_VS_SELL
@@ -131,7 +136,7 @@ def extract_crop(prompt: str) -> Optional[str]:
 
 
 def extract_batch_code(prompt: str) -> Optional[str]:
-    m = re.search(r"\b(BAT[-_A-Z0-9]+|HB[-_A-Z0-9]+)\b", prompt or "", re.I)
+    m = re.search(r"\b(BAT[-_][A-Z0-9]+|HB[-_][A-Z0-9]+)\b", prompt or "", re.I)
     return m.group(1) if m else None
 
 
@@ -643,6 +648,13 @@ def run_pipeline(
     }, conversation_id)
     store.add_turn(conversation_id, turn)
 
+    # Include actual data rows for inventory/spoilage queries
+    data_rows = None
+    if intent in ("inventory", "spoilage"):
+        data = evidence.get("data") or {}
+        # Prefer Zetaris data, fall back to PostgreSQL
+        data_rows = data.get("zetaris_inventory") or data.get("zetaris_data") or data.get("inventory", {}).get("items") or data.get("risks", {}).get("critical_batches")
+
     return {
         "status": "success",
         "live_model": live,
@@ -656,6 +668,7 @@ def run_pipeline(
             "retrieved_at": evidence.get("retrieved_at"),
             "crop": evidence.get("crop"),
             "batch_code": evidence.get("batch_code"),
+            "data_rows": data_rows,  # Include actual records for data listing queries
         },
         "finance": finance,
         "reasoning": reasoning,
@@ -669,6 +682,7 @@ def run_pipeline(
             "finance": finance,
             "evidence": evidence.get("sources"),
             "warnings": list(dict.fromkeys((evidence.get("warnings") or []) + (finance.get("warnings") or []))),
+            "data_rows": data_rows,  # Include in file_data for frontend
         },
         "logs": [
             f"INTENT: {intent}",
