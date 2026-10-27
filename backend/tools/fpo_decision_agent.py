@@ -679,19 +679,30 @@ def reason_with_models(
     nvidia_client: Any = None,
 ) -> Dict[str, Any]:
     """Prefer Meterless when a real runtime is injected/available; else NVIDIA FPO adapter; else deterministic text."""
-    # Build focused evidence package for the model - only essential data to avoid token bloat and validation issues
+    # Build focused evidence package for the model - include detailed data for comprehensive reports
     data = evidence.get("data") or {}
     
-    # Extract only essential data for the model - avoid token bloat from raw data
-    # The finance section already contains computed values with all needed numbers
-    # Provide only summaries of raw data to avoid token bloat and validation issues
     def _summarize_inventory(batches):
         if not batches:
             return "No inventory data available"
-        # Return summary: count, total kg, crops represented
+        # Return detailed summary with batch details
         total_kg = sum(float(b.get("net_available_kg") or 0) for b in batches)
         crops = set(b.get("crop_name") for b in batches if b.get("crop_name"))
-        return f"{len(batches)} batches, {total_kg:,.1f} kg total, crops: {', '.join(sorted(crops))}"
+        batch_details = []
+        for b in batches[:10]:  # Limit to 10 batches to avoid token bloat
+            batch_details.append({
+                "batch_code": b.get("batch_code"),
+                "crop_name": b.get("crop_name"),
+                "net_available_kg": float(b.get("net_available_kg") or 0),
+                "harvest_date": b.get("harvest_date"),
+                "storage_location": b.get("warehouse_code") or b.get("storage_location"),
+                "days_until_quality_window_end": b.get("days_until_quality_window_end"),
+                "spoilage_risk_level": b.get("spoilage_risk_level"),
+            })
+        return {
+            "summary": f"{len(batches)} batches, {total_kg:,.1f} kg total, crops: {', '.join(sorted(crops))}",
+            "batch_details": batch_details,
+        }
     
     def _summarize_market(market_data):
         if not market_data or market_data.get("status") != "success":
@@ -699,9 +710,23 @@ def reason_with_models(
         comps = market_data.get("market_comparison", [])
         if not comps:
             return "No market comparisons available"
-        # Return top 3 markets summary
-        top = comps[:3]
-        return "; ".join(f"{m['market_name']}: {m.get('avg_price', 'N/A')} INR/quintal" for m in top)
+        # Return ALL markets with full details, not just top 3
+        return [
+            {
+                "market_name": m.get("market_name"),
+                "district": m.get("district"),
+                "state": m.get("state"),
+                "avg_price_inr_per_quintal": m.get("avg_price"),
+                "price_inr_per_kg": round(float(m.get("avg_price", 0)) / 100, 2) if m.get("avg_price") else None,
+                "modal_price": m.get("modal_price"),
+                "min_price": m.get("min_price"),
+                "max_price": m.get("max_price"),
+                "arrivals_quintals": m.get("arrivals_quintals"),
+                "observations_count": m.get("observations_count"),
+                "observation_date": m.get("observation_date"),
+            }
+            for m in comps
+        ]
     
     def _summarize_transport(transport_data):
         if not transport_data or transport_data.get("status") != "success":
@@ -709,22 +734,81 @@ def reason_with_models(
         routes = transport_data.get("routes", [])
         if not routes:
             return "No routes available"
-        # Return cheapest 3 routes
-        cheapest = sorted(routes, key=lambda r: float(r.get("transport_cost_per_kg_inr") or 999))[:3]
-        return "; ".join(f"{r['origin_warehouse']}->{r['destination_market']}: {r.get('transport_cost_per_kg_inr', 'N/A')} INR/kg" for r in cheapest)
+        # Return ALL routes with full details, sorted by cost
+        sorted_routes = sorted(routes, key=lambda r: float(r.get("transport_cost_per_kg_inr") or 999))
+        return [
+            {
+                "origin_warehouse": r.get("origin_warehouse"),
+                "destination_market": r.get("destination_market"),
+                "distance_km": r.get("distance_km"),
+                "duration_hours": r.get("duration_hours"),
+                "vehicle_type": r.get("vehicle_type"),
+                "capacity_kg": r.get("capacity_kg"),
+                "transport_cost_per_kg_inr": r.get("transport_cost_per_kg_inr"),
+                "total_transport_cost_inr": r.get("total_transport_cost_inr"),
+            }
+            for r in sorted_routes
+        ]
     
-    # Build focused evidence package - ONLY provide summarized data and key numbers
-    # DO NOT include the full finance object - model should only use KEY_NUMBERS_TO_QUOTE
+    def _summarize_weather(weather_data):
+        if not weather_data or weather_data.get("status") != "success":
+            return {"status": "unavailable", "message": "Weather data not available"}
+        return {
+            "status": "available",
+            "origin": {
+                "temperature_c": weather_data.get("origin_temperature_c"),
+                "humidity_pct": weather_data.get("origin_humidity_pct"),
+                "precipitation_mm": weather_data.get("origin_precipitation_mm"),
+                "heat_stress_days": weather_data.get("origin_heat_stress_days"),
+            },
+            "destination": {
+                "temperature_c": weather_data.get("dest_temperature_c"),
+                "humidity_pct": weather_data.get("dest_humidity_pct"),
+                "precipitation_mm": weather_data.get("dest_precipitation_mm"),
+                "heat_stress_days": weather_data.get("dest_heat_stress_days"),
+            },
+            "en_route": {
+                "precipitation_mm": weather_data.get("en_route_precipitation_mm"),
+                "max_temperature_c": weather_data.get("en_route_max_temp_c"),
+            },
+            "quality_deterioration_estimate_pct": weather_data.get("quality_deterioration_estimate_pct"),
+        }
+    
+    def _summarize_warehouse(warehouse_data):
+        if not warehouse_data or warehouse_data.get("status") != "success":
+            return {"status": "unavailable", "message": "Warehouse data not available"}
+        warehouses = warehouse_data.get("warehouses", [])
+        if not warehouses:
+            return {"status": "unavailable", "message": "No warehouse data available"}
+        return {
+            "status": "available",
+            "warehouses": [
+                {
+                    "warehouse_code": w.get("warehouse_code"),
+                    "warehouse_name": w.get("warehouse_name"),
+                    "district": w.get("district"),
+                    "state": w.get("state"),
+                    "capacity_kg": w.get("capacity_kg"),
+                    "current_stock_kg": w.get("current_stock_kg"),
+                    "utilization_pct": w.get("utilization_pct"),
+                    "storage_type": w.get("storage_type"),
+                }
+                for w in warehouses[:10]  # Limit to 10 warehouses
+            ]
+        }
+    
+    # Build focused evidence package - include detailed data for comprehensive reports
+    data = evidence.get("data") or {}
+    
+    # Build KEY_NUMBERS_TO_QUOTE with FINAL computed values only
     key_numbers = {}
     f = finance
-    # Only provide FINAL computed values - NO intermediate numbers that could be used for calculations
     key_numbers["quantity_kg_at_risk"] = f.get("quantity_kg_at_risk")
     key_numbers["days_until_quality_window_end"] = f.get("days_until_quality_window_end")
     key_numbers["spoilage_risk_level"] = f.get("spoilage_risk_level")
     key_numbers["recommended_action"] = f.get("recommended_action")
     if f.get("sell_now"):
         key_numbers["sell_now_best_market"] = f["sell_now"].get("best_market")
-        # Only provide FINAL net values, NOT intermediate rates that could be multiplied
         key_numbers["sell_now_estimated_net_inr"] = f["sell_now"].get("estimated_net_inr")
         key_numbers["sell_now_net_per_kg_inr"] = f["sell_now"].get("net_per_kg_inr")
         key_numbers["sell_now_transport_per_kg_inr"] = f["sell_now"].get("transport_per_kg_inr")
@@ -740,22 +824,22 @@ def reason_with_models(
         key_numbers["cheapest_route_distance_km"] = f["cheapest_route"].get("distance_km")
         key_numbers["cheapest_route_transport_cost_per_kg_inr"] = f["cheapest_route"].get("transport_cost_per_kg_inr")
     
-    # Build focused evidence package - ONLY provide summarized data and key numbers
-    # DO NOT include the full finance object - model should only use KEY_NUMBERS_TO_QUOTE
+    # Build DETAILED evidence package with full data
     evidence_package = {
         "intent": evidence.get("intent"),
         "crop": evidence.get("crop"),
         "batch_code": evidence.get("batch_code"),
         "warnings": evidence.get("warnings"),
         "sources": evidence.get("sources"),
-        # Summarized data only - no raw bulk data
-        "inventory_summary": _summarize_inventory(
+        # Detailed data - not just summaries
+        "inventory": _summarize_inventory(
             data.get("zetaris_inventory") or data.get("inventory", {}).get("items") or data.get("risks", {}).get("critical_batches")
         ),
-        "market_summary": _summarize_market(data.get("market")),
-        "transport_summary": _summarize_transport(data.get("logistics")),
-        "weather_summary": "Weather data not available" if not data.get("weather") else "Weather data available",
-        "warehouse_summary": "Warehouse data not available" if not data.get("warehouse") else "Warehouse data available",
+        "market": _summarize_market(data.get("market")),
+        "transport": _summarize_transport(data.get("logistics")),
+        "weather": _summarize_weather(data.get("weather")),
+        "warehouse": _summarize_warehouse(data.get("warehouse")),
+        "decisions": data.get("scenarios", {}).get("sales_analysis", []) if data.get("scenarios") else [],
         "KEY_NUMBERS_TO_QUOTE": key_numbers,
     }
     
