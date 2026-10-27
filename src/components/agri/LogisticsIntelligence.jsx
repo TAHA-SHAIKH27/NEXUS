@@ -38,6 +38,19 @@ export default function LogisticsIntelligence() {
   const warehouses = data?.warehouses || [];
   const routes = data?.routes || [];
 
+<<<<<<< HEAD
+=======
+  // Derived honestly from backend fields: route cost per kg = total route cost / vehicle capacity.
+  const routesWithPerKg = routes.map(r => ({
+    ...r,
+    cost_per_kg:
+      parseFloat(r.estimated_total_cost_inr || 0) > 0 && parseFloat(r.capacity_kg || 0) > 0
+        ? parseFloat(r.estimated_total_cost_inr) / parseFloat(r.capacity_kg)
+        : null
+  }));
+  const overCapacityCount = warehouses.filter(w => parseFloat(w.utilization_pct || 0) > 100).length;
+
+>>>>>>> origin/feature/nexus-ui-transformation
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
       {/* Header */}
@@ -51,14 +64,30 @@ export default function LogisticsIntelligence() {
               </h2>
             </div>
             <p style={{ margin: 0, color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+<<<<<<< HEAD
               Optimizing 550 storage facilities and inter-district transport routes across Western & Southern corridors.
+=======
+              {warehouses.length > 0
+                ? `${warehouses.length} monitored storage facilities and registered transport routes.`
+                : 'Storage facilities and inter-district transport routes.'}
+>>>>>>> origin/feature/nexus-ui-transformation
             </p>
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+<<<<<<< HEAD
             <span className="agri-badge emerald">
               <ShieldCheck size={12} />
               <span>Zero Overcapacity Verified</span>
+=======
+            <span className={`agri-badge ${overCapacityCount === 0 ? 'emerald' : 'rose'}`}>
+              <ShieldCheck size={12} />
+              <span>{warehouses.length === 0
+                ? 'Awaiting data'
+                : overCapacityCount === 0
+                  ? 'Zero Overcapacity Verified'
+                  : `${overCapacityCount} Over Capacity`}</span>
+>>>>>>> origin/feature/nexus-ui-transformation
             </span>
             <button onClick={fetchLogistics} className="agri-btn ghost">
               <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -96,7 +125,18 @@ export default function LogisticsIntelligence() {
                 </tr>
               </thead>
               <tbody>
+<<<<<<< HEAD
                 {warehouses.slice(0, 15).map((w) => (
+=======
+                {warehouses.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-faint)' }}>
+                      No warehouse data available from Zetaris.
+                    </td>
+                  </tr>
+                ) : (
+                  warehouses.slice(0, 15).map((w) => (
+>>>>>>> origin/feature/nexus-ui-transformation
                   <tr key={w.warehouse_id}>
                     <td>
                       <div style={{ fontWeight: 600, color: '#fff' }}>{w.warehouse_name}</div>
@@ -131,7 +171,12 @@ export default function LogisticsIntelligence() {
                       </div>
                     </td>
                   </tr>
+<<<<<<< HEAD
                 ))}
+=======
+                  ))
+                )}
+>>>>>>> origin/feature/nexus-ui-transformation
               </tbody>
             </table>
           </div>
@@ -162,13 +207,28 @@ export default function LogisticsIntelligence() {
                 </tr>
               </thead>
               <tbody>
+<<<<<<< HEAD
                 {routes.slice(0, 15).map((r) => (
+=======
+                {routesWithPerKg.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-faint)' }}>
+                      No active transport routes registered.
+                    </td>
+                  </tr>
+                ) : (
+                  routesWithPerKg.slice(0, 15).map((r) => (
+>>>>>>> origin/feature/nexus-ui-transformation
                   <tr key={r.route_id}>
                     <td>
                       <div style={{ fontWeight: 600, color: '#fff' }}>{r.origin_warehouse}</div>
                       <div style={{ fontSize: '0.72rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                         <Navigation size={11} />
+<<<<<<< HEAD
                         <span>To {r.destination_buyer} ({r.destination_market})</span>
+=======
+                        <span>To {r.buyer_name || r.destination_market} ({r.destination_market})</span>
+>>>>>>> origin/feature/nexus-ui-transformation
                       </div>
                     </td>
                     <td>
@@ -180,10 +240,18 @@ export default function LogisticsIntelligence() {
                       {parseFloat(r.distance_km || 0).toFixed(0)} km
                     </td>
                     <td style={{ fontWeight: 700, color: '#34d399' }}>
+<<<<<<< HEAD
                       ₹{parseFloat(r.transport_cost_per_kg_inr || 0).toFixed(2)} / kg
                     </td>
                   </tr>
                 ))}
+=======
+                      {r.cost_per_kg != null ? `₹${r.cost_per_kg.toFixed(2)} / kg` : '—'}
+                    </td>
+                  </tr>
+                  ))
+                )}
+>>>>>>> origin/feature/nexus-ui-transformation
               </tbody>
             </table>
           </div>
