@@ -162,6 +162,8 @@ class MeterlessConfig:
             return False, "Meterless runtime token is not configured"
         if self.token == PLACEHOLDER_TOKEN:
             return False, "Placeholder token rt-local is rejected; paste the token from the Nightshift state directory (proxy-token)"
+        if self.token == "********" or self.token == "••••••••":
+            return False, "Masked placeholder token detected; the real token was overwritten. Re-enter the Nightshift proxy-token in Settings."
         return True, ""
 
 

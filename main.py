@@ -411,33 +411,55 @@ def get_config():
 def post_config(req: ConfigModel):
     # Merge into existing config so existing keys survive this write
     cfg = load_config()
-    cfg.update({
-        "gemini_api_key": req.gemini_api_key,
-        "huggingface_api_key": req.huggingface_api_key,
+    
+    # Masked placeholder that frontend sends when field shows masked value
+    MASKED_PLACEHOLDER = "********"
+    
+    def clean_secret(value: str) -> str:
+        """Return empty string if value is masked placeholder, else return value."""
+        if value == MASKED_PLACEHOLDER or value == "••••••••":
+            return ""
+        return value
+    
+    # Build update dict, only including secrets that are not masked placeholders
+    updates = {
         "gemini_project_id": req.gemini_project_id or "",
-        "groq_api_key": req.groq_api_key or "",
-        "nvidia_api_key": req.nvidia_api_key or "",
         "nvidia_model": req.nvidia_model or "z-ai/glm-5.3-flash",
         "nvidia_fpo_model": req.nvidia_fpo_model or "nvidia/nemotron-3.5-bolt-e4b",
         "nvidia_fpo_timeout_seconds": req.nvidia_fpo_timeout_seconds or 120,
         "nvidia_fpo_max_retries": req.nvidia_fpo_max_retries or 2,
         "meterless_base_url": req.meterless_base_url or "http://127.0.0.1:8088/v1",
-        "meterless_runtime_token": req.meterless_runtime_token or "",
         "meterless_app_id": req.meterless_app_id or "nexus",
         "meterless_model": req.meterless_model or "meterless/auto",
         "zetaris_rest_url": req.zetaris_rest_url or "http://localhost:8888/api/v1.0",
         "zetaris_base_url": req.zetaris_base_url or "http://localhost:3000",
         "zetaris_org_id": req.zetaris_org_id or "",
-        "zetaris_api_key": req.zetaris_api_key or "",
         "zetaris_username": req.zetaris_username or "",
-        "zetaris_password": req.zetaris_password or "",
         "zetaris_default_limit": req.zetaris_default_limit or 100,
         "zetaris_max_limit": req.zetaris_max_limit or 100,
         "zetaris_timeout_seconds": req.zetaris_timeout_seconds or 30,
-        "openrouteservice_api_key": req.openrouteservice_api_key or "",
-        "datagov_api_key": req.datagov_api_key or "",
         "market_price_timeout": req.market_price_timeout or 30,
-    })
+    }
+    
+    # Only update secret fields if they are not masked placeholders
+    secret_fields = {
+        "gemini_api_key": req.gemini_api_key,
+        "huggingface_api_key": req.huggingface_api_key,
+        "groq_api_key": req.groq_api_key,
+        "nvidia_api_key": req.nvidia_api_key,
+        "meterless_runtime_token": req.meterless_runtime_token,
+        "zetaris_api_key": req.zetaris_api_key,
+        "zetaris_password": req.zetaris_password,
+        "openrouteservice_api_key": req.openrouteservice_api_key,
+        "datagov_api_key": req.datagov_api_key,
+    }
+    
+    for key, value in secret_fields.items():
+        if value and value != MASKED_PLACEHOLDER and value != "••••••••":
+            updates[key] = value
+        # If value is masked placeholder or empty, skip - preserve existing
+    
+    cfg.update(updates)
     save_config(cfg)
     return {"status": "success", "message": "Configuration saved."}
 

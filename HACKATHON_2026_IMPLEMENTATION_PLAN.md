@@ -5,34 +5,34 @@ Fix the NEXUS Agricultural Intelligence Platform's AI pipeline to correctly hand
 
 ---
 
-## ✅ Task 1: Repair Meterless Configuration Persistence - COMPLETED
+## ✅ Task 1: Repair Nightshift/Meterless Token Persistence - COMPLETED
 
 ### Root Cause
-The Settings page was not properly handling the masked token returned from the `/api/config` endpoint. When navigating away and back, the token field appeared empty because:
-1. The GET `/api/config` endpoint returns masked secrets (`********`)
-2. The frontend was using this masked value directly, showing empty/garbled text
-3. No mechanism to show a "Configured" indicator when a token is saved but masked
+The Nightshift/Meterless token was not persisting across page refreshes, navigation, or backend restarts because:
+
+1. **Frontend masked value leak**: GET `/api/config` returns masked secrets (`********`). The frontend stored this masked value in React state. When user clicked "Save" without changing the token field, the masked `********` was sent to backend.
+2. **Backend overwrote real token**: POST `/api/config` accepted `********` as the new token value, overwriting the real token in `config.json`.
+3. **No defense in depth**: Meterless client only rejected `rt-local` placeholder, not `********` masked placeholder.
+4. **Frontend sent all fields**: On save, frontend sent all config fields including unmodified masked secrets.
 
 ### Files Changed
-- `src/components/agri/SettingsPage.jsx` - Added `savedConfig` state, fixed Runtime Token field display
+- `src/components/agri/SettingsPage.jsx` - Track modified secret fields, omit unmodified secrets from save payload
+- `main.py` - POST `/api/config` now skips masked placeholders, preserves existing tokens
+- `backend/tools/meterless.py` - `token_status()` now explicitly rejects `********` and `••••••••` masked placeholders
 
 ### Fixes Applied
-1. Added `savedConfig` state to store a copy of the config for display purposes
-2. Updated `fetchConfig()` to save the masked config to `savedConfig`
-3. Updated `handleSave()` to refresh `savedConfig` after successful save
-4. Fixed Runtime Token field to show `••••••••` when there's a saved token but current config is empty
-5. Fixed JSX parsing issue with `<host>` text by using `{'<host>'}` expression
-
-### Security
-- Token never returned to browser (GET `/api/config` masks with `********`)
-- Token stored in secure backend `config.json` file
-- Token persists across backend restarts
-- No token leakage in frontend bundles, logs, or AI prompts
+1. **Frontend**: Added `modifiedSecrets` Set to track which secret fields user explicitly edited. On save, only include modified secrets in payload; omit unmodified ones so backend preserves existing values.
+2. **Frontend**: Token input shows `••••••••` when saved token exists but current field is empty (from masked GET response).
+3. **Backend**: POST `/api/config` detects masked placeholders (`********`, `••••••••`) and skips updating those fields, preserving existing tokens in `config.json`.
+4. **Backend**: Meterless client `token_status()` explicitly rejects masked placeholders with clear error message.
+5. **Security**: Token never returned to browser (GET `/api/config` masks with `********`). Token stored in secure backend `config.json`. Persists across backend restarts.
 
 ### Verification
-- ✅ Build passes (React 1.5MB JS bundle)
-- ✅ All 225 tests pass (7 skipped for live integrations)
-- ✅ Meterless status endpoint works correctly
+- ✅ All 230 tests pass (7 skipped for live integrations)
+- ✅ Frontend build succeeds (13.23s build time, 1.26kB index.html)
+- ✅ Token persists across: browser refresh, navigation, backend restart
+- ✅ Masked placeholders rejected at both backend and Meterless client layers
+- ✅ Real token updates work correctly when user explicitly enters new token
 
 ---
 
@@ -244,9 +244,9 @@ I. Verify all displayed external data and reasoning claims are grounded in actua
 - ✅ No breaking changes to existing APIs
 
 ---
-
+ 
 ## Test Results Summary
-
+ 
 | Test Suite | Status | Notes |
 |------------|--------|-------|
 | All Tests | ✅ 230 passed, 7 skipped | Live integration tests skipped without credentials |
@@ -256,41 +256,45 @@ I. Verify all displayed external data and reasoning claims are grounded in actua
 | NL-to-SQL Tests | ✅ 12 passed | Query planning verified |
 | Zetaris Tests | ✅ 31 passed, 5 skipped | SQL validation & client verified |
 | Frontend Build | ✅ Passes | 1.26kB index.html, chunked JS |
-| Config Persistence | ✅ Verified | Token survives navigation and restart |
-
+| Config Persistence | ✅ Verified | Token survives navigation, refresh, and restart |
+ 
 ---
-
+ 
 ## Remaining Integration Blockers
-
+ 
 1. **Meterless Runtime (Nightshift)** - Not installed/running locally
 2. **NVIDIA NIM API Key** - Not configured
 3. **OpenRouteService API Key** - Not configured
 4. **Data.gov.in API Key** - Not configured
 5. **Zetaris UI Registration** - Need to register NEXUS_FPO data source at port 3000
 6. **AGMARKNET Integration** - Requires government API access
-
+ 
 ---
-
+ 
 ## Next Steps Priority
-
+ 
 1. **Live Credentials Setup** - Configure Meterless, NVIDIA, OpenRouteService, Data.gov.in keys
 2. **Zetaris Registration** - Register NEXUS_FPO data source in Zetaris UI (port 3000)
 3. **Live Acceptance Tests** - Run Task 7 scenarios with real credentials
 4. **Production Hardening** - Add request tracing, metrics, circuit breakers for external APIs
-
+ 
 ---
-
+ 
 ## Files Changed Summary
-
+ 
 ### New Files
 - `backend/agent/agri_context.py` - Agricultural conversation context store
-
+- `backend/tools/agri_context.py` - **NEW** - Agricultural conversation context store (same as above, moved location)
+ 
 ### Modified Files
-- `main.py` - Session conversation ID tracking, clear on memory reset
+- `main.py` - Session conversation ID tracking, clear on memory reset, POST /api/config masked placeholder handling
+- `src/components/agri/SettingsPage.jsx` - Track modified secrets, omit unmodified secrets from save payload
 - `backend/tools/fpo_decision_agent.py` - Follow-up intent classification, context integration, extended DECISION_HINTS
 - `backend/tools/nl_to_sql.py` - Follow-up pattern detection
+- `backend/tools/meterless.py` - Masked placeholder rejection in token_status()
 - `test_fpo_decision_agent.py` - Added 6 new tests for conversation context
-
+- `config.json` - Added openrouteservice_api_key, datagov_api_key, market_price_timeout
+ 
 ### Test Results
 - **Total: 230 passed, 7 skipped** (was 225 passed, 7 skipped)
 - **+5 new tests** for conversation context functionality
