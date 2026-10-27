@@ -95,13 +95,30 @@ export default function SettingsPage() {
         body: JSON.stringify(payload)
       });
       if (res.ok) {
+        const json = await res.json();
         setSaveMsg('Configuration updated successfully!');
         setTimeout(() => setSaveMsg(''), 3000);
+        // Update secretsConfigured from backend response
+        if (json.secrets_configured) {
+          setSecretsConfigured(json.secrets_configured);
+        }
         // Refresh the saved config for display
         const res2 = await fetch('/api/config');
         if (res2.ok) {
-          const json = await res2.json();
-          setSavedConfig(json);
+          const json2 = await res2.json();
+          setSavedConfig(json2);
+          // Update secretsConfigured from fresh GET
+          const secretKeys2 = [
+            'gemini_api_key', 'huggingface_api_key', 'groq_api_key', 'nvidia_api_key',
+            'meterless_runtime_token', 'zetaris_api_key', 'zetaris_password',
+            'openrouteservice_api_key', 'datagov_api_key'
+          ];
+          const configured = {};
+          secretKeys2.forEach(key => {
+            const val = json2[key];
+            configured[key] = val && val !== '********' && val !== '';
+          });
+          setSecretsConfigured(configured);
         }
         // Clear modified secrets after successful save
         setModifiedSecrets(new Set());
