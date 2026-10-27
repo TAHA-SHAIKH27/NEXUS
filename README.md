@@ -1,573 +1,222 @@
-# N.E.X.U.S.
-
-## Networked EXpert for Unified Synthesis
-
-*A direct-command assistant — clear requests, supported actions, honest results.*
-
-**A Windows-first, local-first AI assistant that understands requests, runs direct commands, manages files, research, and documents, and reports clear results.**
-
-[![Python](https://img.shields.io/badge/Python-3.10--3.14-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![Windows](https://img.shields.io/badge/Platform-Windows-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
-[![FastAPI](https://img.shields.io/badge/Backend-FastAPI-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![React](https://img.shields.io/badge/Frontend-React-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![Playwright](https://img.shields.io/badge/Browser-Playwright-45BA4B?logo=playwright&logoColor=white)](https://playwright.dev/)
-
-> **NEXUS is built around direct commands, not a chat-only interface:**  
-> **Understand → Respond → Act on supported commands → Report clearly**
-
----
-
-## What is NEXUS?
-
-NEXUS is an open development project for a **general-purpose AI assistant for Windows**.
-
-Instead of only generating text, NEXUS turns natural-language instructions into supported direct actions and reports clear results.
-
-The goal is a single assistant with many tools — not a collection of disconnected utilities.
-
-### Core idea
-
-```text
-                    USER
-                      │
-                      ▼
-              ┌───────────────┐
-              │    N.E.X.U.S  │
-              │ Command Layer │
-              └───────┬───────┘
-                      │
-             Understand request
-                      │
-                      ▼
-                 Direct command
-                      │
-        ┌─────────────┼─────────────┐
-        ▼             ▼             ▼
-    COMPUTER       BROWSER        OFFICE
-        │             │             │
-        └─────────────┼─────────────┘
-                      ▼
-                 Clear result
-```
-
----
-
-## What can NEXUS do?
-
-### 🧠 Natural-language commands
-
-- Natural-language command understanding
-- Direct single-step actions
-- Conversation history and memory
-- Reminders, notes, and todos
-- Clear spoken and logged results
-
-### 🖥️ Windows computer control
-
-- Windows UI Automation (UIA)
-- Application and window discovery
-- Semantic element discovery
-- Clicking, typing, scrolling and keyboard shortcuts
-- Clipboard operations
-- Window management
-- Screenshots
-- OCR and vision-assisted inspection
-- Bounded, recoverable automation
-
-### 🌐 Browser automation
-
-- Chromium control through Playwright
-- Navigation and searching
-- Form filling and interaction
-- Tabs and screenshots
-- Web-content extraction
-- Boilerplate/navigation cleanup before research analysis
-- Image searching for generated documents and presentations
-
-### 📄 Research → Word / PowerPoint
-
-NEXUS is designed to **analyze research before generating an artifact**.
-
-```text
-Discover
-   ↓
-Extract
-   ↓
-Clean
-   ↓
-Analyze
-   ↓
-Compare
-   ↓
-Synthesize
-   ↓
-Generate
-   ↓
-Verify
-```
-
-It can generate:
-
-- Word documents with `python-docx`
-- PowerPoint presentations with `python-pptx`
-- Tables and charts
-- Research reports
-- Source-based summaries
-- Presentation images
-- PDF text extraction
-
-Generated artifacts are exposed through the NEXUS files/gallery system.
-
-### 📁 File analysis & document Q&A
-
-- Analyze uploaded files
-- Extract document text
-- Ask questions about file contents
-- OCR image/scanned documents
-- Process code files
-- Produce corrected versions of supported files
-
-### 🛠️ Code Intelligence
-
-NEXUS includes a Code Core for inspecting and repairing its own codebase.
-
-- AST / syntax checks
-- `py_compile` validation
-- Per-file issue detection
-- Code health information
-- Nemotron/NVIDIA-powered repair
-- Preview → Apply Patch workflow
-- Validation after changes
-- Automatic rollback on failed repairs
-- Large-file segmented repair
-- Uploaded-file inspection and refactoring
-
-### 🎙️ Voice
-
-NEXUS includes Windows/browser-oriented voice capabilities and is designed to support natural voice interaction as the project evolves.
-
-### 📱 Additional capabilities
-
-NEXUS also contains **Android/ADB and phone-mirroring functionality**.
-
-These capabilities are part of the project but are **not the current primary development focus**. Current development is concentrated on Windows commands, browser control, memory, research, voice and code intelligence.
-
-The same principle applies to supporting utilities such as the watchdog: they remain part of the project where implemented, even when they are not the current development priority.
-
-### 🗄️ Zetaris AI Data Gateway (Read-Only SQL)
-
-NEXUS includes a read-only connector for the **Zetaris AI Data Gateway** — a local data virtualization platform that exposes registered data sources (PostgreSQL, MySQL, CSV, Parquet, etc.) through a unified SQL interface.
-
-**Commands:**
-```
-zetaris: test connection
-zetaris: query SELECT * FROM NY_TAXI.customers LIMIT 2
-zetaris: run SELECT COUNT(*) FROM NY_TAXI.trips
-zetaris: SELECT * FROM TPCDS_DB.store_sales LIMIT 5
-```
-
-**Features:**
-- HTTP Basic authentication via Zetaris UI proxy (port 3000)
-- Bearer token session management (auto-login, cached in memory)
-- SELECT/WITH queries only — writes and DDL rejected
-- Configurable row limits (default 50, max 100 per query)
-- Query pagination (auto-fetches additional pages up to limit)
-- Query token cleanup (always closes server-side cursor)
-- Timeouts and error handling with actionable messages
-- Credentials stored in gitignored `config.json` (never committed)
-
-**Requires:** Local Zetaris deployment (Docker Compose) with sample data (NY_TAXI, TPCDS_DB).
-
----
-
-## Architecture
-
-NEXUS separates the model layer from the tool/runtime layer.
-
-### Model roles
-
-- **Gemini** — conversation and supported vision tasks
-- **NVIDIA NIM / Nemotron** — code intelligence and repair workflows
-- Other configured providers can be used for supported optional features
-
-### Runtime
-
-```text
-NEXUS
-│
-├── Command Runtime (/api/command)
-│   ├── Memory / conversation history
-│   ├── Notifications / reminders
-│   ├── Voice / language helpers
-│   └── Recovery (crash repair with rollback)
-│
-├── Computer Tools
-│   └── Windows UI Automation
-│
-├── Browser Tools
-│   └── Playwright / Chromium
-│
-├── Office Tools
-│   ├── Word
-│   ├── PowerPoint
-│   └── Charts
-│
-├── Research
-│   └── Analyze → Compare → Synthesize
-│
-├── Vision / OCR
-│
-├── Code Core
-│   └── Audit → Repair → Validate → Rollback
-│
-├── Voice
-│
-├── Android / ADB
-│
-└── React + Vite Dashboard
-```
-
-### Repository structure
-
-```text
-NEXUS/
-├── main.py
-├── agent.py
-├── system_ops.py
-├── code_core.py
-├── document_intel.py
-├── phone_control.py
-├── start_nexus.py
-├── google_oauth.py
-│
-├── backend/
-│   ├── agent/
-│   │   ├── notifications.py
-│   │   ├── phase1_memory.py
-│   │   ├── phase1_runtime.py
-│   │   ├── voice.py
-│   │   ├── lang_detect.py
-│   │   ├── hindi.py
-│   │   ├── marathi.py
-│   │   └── human_replies.py
-│   │
-│   └── tools/
-│       ├── computer.py
-│       ├── browser.py
-│       ├── office.py
-│       ├── charts.py
-│       └── vision.py
-│
-├── src/                    # React + Vite dashboard
-├── tests/
-├── requirements.txt
-└── README.md
-```
-
----
-
-## Why NEXUS?
-
-The project is focused on moving from:
-
-```text
-AI that tells you what to do
-          ↓
-AI that understands commands
-          ↓
-AI that acts on supported tasks
-          ↓
-AI that reports results clearly
-          ↓
-AI that stays within its scope
-```
-
-The important part is **clear, honest results**.
-
-NEXUS should not simply say:
-
-> "Done."
-
-It reports what it did, and says plainly when something is outside its scope.
-
----
-
-## Requirements
-
-### System
-
-- Windows 10/11
-- Python 3.10–3.14
-- Node.js 18+
-- npm
-- Google Chrome/Chromium for Playwright
-
-### Optional service credentials
-
-NEXUS can use configured external AI services for specific capabilities. Credentials are feature-dependent.
-
-| Configuration | Purpose |
-|---|---|
-| `gemini_api_key` | Conversation, memory, supported vision/OCR and document Q&A |
-| `nvidia_api_key` | Code intelligence / Nemotron workflows |
-| `huggingface_api_key` | Optional image-generation fallback |
-| `groq_api_key` | Cloud fallback for voice transcription (free at console.groq.com) |
-| Google OAuth configuration | Supported protected Google features |
-| `zetaris_base_url` | Zetaris UI origin (default: http://localhost:3000) |
-| `zetaris_username` | Zetaris login email |
-| `zetaris_password` | Zetaris login password |
-| `zetaris_org_id` | Numeric organization ID from Zetaris UI |
-| `zetaris_default_limit` | Default rows per query (1-100, default: 50) |
-| `zetaris_max_limit` | Hard cap on rows per query (1-100, default: 100) |
-| `zetaris_timeout_seconds` | Request timeout (default: 30) |
-
-The project is designed so that missing optional credentials produce a clear feature-specific limitation rather than silently pretending a capability worked.
-
-Python dependencies are listed in **`requirements.txt`**.
-
----
-
-## Installation
-
-Clone the repository:
-
-```bash
+# NEXUS — Agricultural Decision Intelligence for FPOs
+
+**Find the problem. Understand the evidence. Recommend the next move.**
+
+A data-grounded AI decision-support platform for **Farmer Producer Organizations (FPOs)**: identify produce at risk of spoilage, assess where and when to sell, compare wholesale markets, estimate transport and storage costs, and explain the trade-offs with traceable evidence.
+
+Built for the **Open Agent Hackathon 2026**.
+
+> **Submission integrity:** This is a working prototype built around a synthetic agricultural dataset, not a deployed live production system. Database and unit-test success do not mean that every external API is working at all times. Decisions requiring missing or stale price, route, or cost evidence must be presented as conditional, not guaranteed profit.
+
+## Why this matters
+
+A farmer or FPO operator may have tonnes of tomatoes approaching the end of their saleable window. The nearest mandi is not always the most profitable; the market with the highest quoted price might be too far away, involve costly transport, or expose produce to deterioration. A useful decision must combine **inventory, quality risk, market price, journey time, transport cost, storage cost, and uncertainty** rather than answer with a generic “sell now.”
+
+NEXUS aims to help operators:
+- Discover which crop batches require urgent attention, including quantity, harvest date and warehouse.
+- Compare plausible destinations such as Baramati, Pune, Mumbai and Nashik.
+- Assess whether to dispatch immediately or store temporarily.
+- Estimate recoverable proceeds, incremental expenses, spoilage exposure and possible profit/loss.
+- Ask follow-ups like “Where should I sell those batches?” without losing the selected crop and batch context.
+- Inspect which evidence and calculations support a recommendation.
+
+## End-to-end approach
+
+\`\`\`text
+FPO operator (natural-language question)
+       |
+       v
+NEXUS React AI Workspace
+       |
+       v
+Agricultural intent + session context
+       |
+       v
+Typed NL-to-SQL planner / allowlisted read-only queries
+       |
+       v
+Zetaris semantic/query gateway --> PostgreSQL FPO data & analytical views
+       |
+       +--> Government mandi prices (data.gov.in / AGMARKNET, if available)
+       +--> Road routes (OpenRouteService, if configured)
+       +--> Weather forecasts (Open-Meteo)
+       |
+       v
+Deterministic financial and risk calculations (Python Decimal)
+       |
+       v
+Meterless / Nightshift routing --> NVIDIA Nemotron explanation
+       |                         --> configured fallback when unavailable
+       v
+Evidence validation --> Recommendation, alternatives, sources, warnings
+\`\`\`
+
+**The database is the source of inventory facts. The finance engine owns arithmetic. The AI model explains evidence, not invents missing batch IDs, rupee amounts or prices.**
+
+## Sponsor and technology integrations
+
+| Technology | How NEXUS uses it | Implementation / evidence |
+|---|---|---|
+| **Zetaris** | Query gateway for the registered PostgreSQL FPO source; safe SELECT-based batch inventory and analytical retrieval | \`backend/tools/zetaris.py\`, \`backend/tools/nl_to_sql.py\`; reported connection and SELECT 1 success. A successful SELECT 1 alone is not proof of a complete FPO inventory query. |
+| **PostgreSQL** | FPOs, farmers, crops, harvest batches, warehouses, inventory, prices, routes, storage and analytical views | Schema migrations and synthetic dataset in the repository. Data is for demonstration, not genuine farmer records. |
+| **Meterless Engine / Nightshift** | AI routing/orchestration layer with a local Windows runtime and NVIDIA cloud lanes | \`backend/tools/meterless.py\`; successful Nightshift CLI/NVIDIA adapter tests reported. NEXUS-to-runtime end-to-end execution needs a verified trace. |
+| **NVIDIA Nemotron** | Explain evidence, compare risk/finance outcomes and support agent workflows | \`backend/tools/nvidia_nemotron.py\` and Nightshift cloud-lane configuration. See model roles below. |
+| **OpenRouteService / OpenStreetMap** | Road geocoding, directions, distance/time and transport-cost inputs | \`backend/tools/routing.py\`; live Baramati→Pune/Mumbai/Nashik route checks reported. Fuel, loading, toll and vehicle expenses must be checked or labelled assumptions. |
+| **Open-Meteo** | Forecast temperature, humidity and rainfall; inputs to crop-specific risk estimates | \`backend/tools/weather.py\`; reported live 7-day forecast checks and cache repair. |
+| **data.gov.in** | Government wholesale mandi-price observations, market/commodity filtering, timestamps and unit conversion | \`backend/tools/live_market_prices.py\`. **Latest reported live state: HTTP 500; not verified usable.** |
+| **AGMARKNET** | Secondary official wholesale-price source, parsed and freshness-labelled when available | \`backend/tools/live_market_prices.py\`. **Latest reported live state: no usable observations.** |
+| **Cursor** | Sponsor tool evaluated as a potential development option | **Not used for implementation.** We did not establish how to claim/use the offered credits in time, so we make **no Cursor integration or credit-usage claim**. |
+| **OpenCode** | AI-assisted code development and debugging | Used during NEXUS development; Nemotron 3 Ultra 550B A55B was selected for development sessions. This is **developer tooling**, distinct from the runtime inference provider used by NEXUS. |
+
+### NVIDIA models and roles
+
+NEXUS uses an extensible model/provider design. The following are the relevant models discussed or configured; **configured, supported and live-tested are not interchangeable**.
+
+| Model | Intended role | Verification caveat |
+|---|---|---|
+| **Nemotron 3 Ultra 550B A55B** (\`nvidia/nemotron-3-ultra-550b-a55b\`) | Primary high-complexity agricultural explanation/decision reasoning; also used for development in OpenCode | Direct NVIDIA and Nightshift adapter calls were reported successful. A Nightshift Ultra *Race* lane was configured and generated attempts. A complete NEXUS agricultural inference trace is the final proof. |
+| **Nemotron 3.5 Lightning 30B A3B** | Faster agent reasoning and possible verification duty | Direct + Nightshift adapter diagnostics were reported successful. Verify actual lane/job execution separately. |
+| **Nemotron 3.5 Bolt E4B** | Lightweight planning, classification and tool-focused steps | Supported in the existing NVIDIA agricultural adapter; use only when actually selected/configured. |
+| **Nemotron 3 Super / other catalog models** | Optional future experiments, not required for demo | Catalog availability does not prove successful invocation. |
+
+Nightshift model selection and duty assignment are runtime settings. An Ultra Race lane is not by itself evidence of a working Judge/Verify lane or a completed end-to-end application run. Cloud-hosted trial endpoints may be rate limited or credit limited.
+
+## Agricultural decision pipeline
+
+1. **Understand.** Detect inventory, spoilage, market selection, hold-vs-sell, finance or logistics intent; resolve relevant context from earlier conversation turns.
+2. **Retrieve.** Generate typed, schema-aware, read-only queries via Zetaris to obtain actual FPO batch records. Label any explicitly enabled PostgreSQL fallback correctly.
+3. **Enrich.** Query government market sources, road routes and weather as configured. Preserve observation dates, units and source identifiers; flag stale or unavailable evidence.
+4. **Calculate.** Use deterministic arithmetic for quantity, revenue, logistics, storage, spoilage assumptions and estimated net proceeds. Distinguish already-incurred procurement costs from incremental dispatch decisions.
+5. **Reason.** Pass structured evidence and computed outcomes to the configured Meterless/Nightshift/NVIDIA reasoning path. Avoid granting the model authority to alter financial numbers.
+6. **Validate and present.** Explain feasibility, financial trade-offs, alternatives, missing inputs and next actions with evidence and execution status.
+
+Relevant implementation: \`backend/tools/fpo_decision_agent.py\`, \`backend/tools/nl_to_sql.py\`, \`backend/tools/live_market_prices.py\`, \`backend/tools/routing.py\`, \`backend/tools/weather.py\`, \`backend/tools/meterless.py\`, \`backend/tools/nvidia_nemotron.py\`.
+
+## Three reproducible demo inputs
+
+These are **example prompts**, not fabricated screenshots or invented live outputs. Run them against the active stack and attach the real results and redacted execution traces before submitting.
+
+### Example A — Critical batch inventory
+
+**Input**
+> Show the five tomato batches with the highest spoilage risk from Zetaris. Include batch ID, saleable quantity, harvest date, warehouse and risk level. Show the executed query source.
+
+**Expected evidence/response**
+- A table of actual matching batch records, sorted by risk/urgency.
+- Zetaris query status, source, retrieval time and row count.
+- If the query fails, a specific error rather than a generic “Sell Now” answer.
+
+### Example B — Market selection with follow-up context
+
+**Input**
+> For those five tomato batches, compare feasible sale destinations in Pune, Mumbai and Nashik. Where should we dispatch first, and why?
+
+**Expected evidence/response**
+- Retained batch IDs and origin locations from Example A.
+- Dated wholesale-price observations if available, route distances/durations, cost assumptions and risks.
+- A supported destination comparison or a transparent statement that current market evidence prevents ranking.
+- Trace of provider/model execution if the AI reasoning stage actually runs.
+
+### Example C — Urgent sell-vs-hold scenario
+
+**Input**
+> Scenario only: We harvested 8,000 kg of hybrid tomatoes on 23 October 2026. As of 27 October, 7,200 kg remain saleable in a non-refrigerated Baramati warehouse at an operator-reported 29°C. Storage costs ₹700 per tonne per day, procurement was ₹12/kg, and quality may last less than 24 hours. A truck holds 5 tonnes, fuel efficiency is 5 km/litre, assumed fuel price is ₹95/litre, and driver/loading cost is ₹3,000 per trip. Compare Baramati, Pune, Mumbai, Nashik and storing one more day. Use actual available prices, routes and weather. Identify the best feasible option or what data is missing to choose.
+
+**Expected evidence/response**
+- Clearly identifies all supplied values as **operator-provided scenario assumptions**, not a real Zetaris batch.
+- Accounts for at least two vehicle loads to move 7.2 tonnes with 5-tonne capacity.
+- Compares available road distances, market prices and costs without inventing unavailable values.
+- Shows recoverable net proceeds and break-even thresholds where possible, including uncertainty.
+
+**Suggested demo walkthrough (approximately three minutes):** problem and stakes → Zetaris/PostgreSQL data → batch risk → market/routing/weather evidence → Nightshift/Nemotron trace → calculation, recommendation and limitations.
+
+## Current prototype status and limitations
+
+The most recent reported audit (commit \`da053fd\`) states:
+- **119 backend tests passed, 6 skipped**, with a successful frontend production build. Earlier reports used different test-discovery totals; do not combine them into one unsupported number.
+- PostgreSQL agricultural analytics endpoints returned results; Zetaris connection and SELECT 1 succeeded.
+- OpenRouteService returned example route distances of approximately **87 km (Baramati–Pune), 207 km (Baramati–Mumbai), and 221 km (Baramati–Nashik)** during that audit. These are observations from the test, **not guaranteed real-time traffic-aware journey estimates**.
+- Open-Meteo returned weather forecasts.
+- NVIDIA Ultra responded to direct/adapter requests; the Nightshift lane produced model attempts.
+- **data.gov.in returned HTTP 500 and AGMARKNET supplied no usable observations in that run**; no real mandi-price-dependent profit ranking should be claimed on that evidence.
+- The full NEXUS → Zetaris → Meterless Engine → Nightshift → NVIDIA → validated recommendation demo still requires a recorded successful execution trace, if not already captured.
+
+Synthetic data is used to demonstrate the workflow. Government observation dates, forecasts, transport assumptions and live service availability can change. NEXUS is decision support, not a guaranteed sale, buyer acceptance, or financial return.
+
+## Technology stack
+
+- **Backend:** Python, FastAPI, read-only SQL planning, deterministic Decimal calculations
+- **Data:** PostgreSQL, Zetaris Lightning/query gateway, seeded FPO agricultural schema and views
+- **AI:** Meterless/Nightshift runtime, NVIDIA NIM/Nemotron, explicit fallback behavior
+- **External intelligence:** data.gov.in, AGMARKNET, OpenRouteService, Open-Meteo
+- **Frontend:** React 18, Vite, charting and agricultural intelligence screens
+- **Environment:** Windows development, Docker-based database/Zetaris stack
+
+## Local setup
+
+### Prerequisites
+
+Windows with Python and Node.js/npm, Docker Desktop for the PostgreSQL/Zetaris stack, and a functioning Nightshift installation for AI routing. External services require connectivity and their respective credentials.
+
+\`\`\`powershell
 git clone https://github.com/TAHA-SHAIKH27/NEXUS.git
 cd NEXUS
-```
-
-Create a virtual environment:
-
-```bash
 python -m venv .venv
-.venv\\Scripts\\activate
-pip install -r requirements.txt
-```
-
-Install Playwright Chromium:
-
-```bash
-python -m playwright install chromium
-```
-
-Install frontend dependencies:
-
-```bash
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
 npm install
-```
+\`\`\`
 
-Configure the services you want to use through the project's local configuration.
+Start the repository's existing PostgreSQL/Zetaris Docker Compose stack and confirm the FPO datasource is registered in Zetaris. **Do not erase volumes or reseed an existing database just to start services.**
 
-**Never commit API keys, OAuth secrets, browser credentials or personal data.**
+Run the backend and frontend in separate terminals:
 
----
+\`\`\`powershell
+.\.venv\Scripts\python.exe -m uvicorn main:app --host 127.0.0.1 --port 8000
+\`\`\`
 
-## First run on a new machine
-
-NEXUS is **offline-first**: a fresh clone with *zero* API keys still runs. Local commands (volume, screenshots, timers, files, math, weather via IP location, jokes, Hindi/Marathi/English offline replies), reminders, notes and the full dashboard all work. AI features light up as you add keys below.
-
-### 1. Add API keys (all optional, easiest via the UI)
-
-Open the dashboard → **Settings** (gear icon) and paste keys, or create `config.json` in the project root (it is gitignored — never commit it):
-
-```json
-{
-  "gemini_api_key": "AIza… or AQ.…",
-  "huggingface_api_key": "hf_…",
-  "gemini_project_id": "",
-  "groq_api_key": "",
-  "nvidia_api_key": "nvapi-…",
-  "nvidia_model": "z-ai/glm-5.3-flash",
-  "zetaris_base_url": "http://localhost:3000",
-  "zetaris_username": "admin@zetaris.com",
-  "zetaris_password": "Zetaris1@",
-  "zetaris_org_id": "1",
-  "zetaris_default_limit": 50,
-  "zetaris_max_limit": 100,
-  "zetaris_timeout_seconds": 30
-}
-```
-
-| Key | Unlocks |
-|---|---|
-| `gemini_api_key` | Full conversation, memory, vision, document Q&A (or link Google in Settings instead) |
-| `groq_api_key` | Cloud fallback for voice transcription (free at console.groq.com) |
-| `nvidia_api_key` | Code Core audits and repairs |
-| `huggingface_api_key` | Image generation |
-| `zetaris_*` | Zetaris AI Data Gateway read-only SQL queries (requires local Zetaris deployment) |
-
-| Key | Unlocks |
-|---|---|
-| `gemini_api_key` | Full conversation, memory, vision, document Q&A (or link Google in Settings instead) |
-| `groq_api_key` | Cloud fallback for voice transcription (free at console.groq.com) |
-| `nvidia_api_key` | Code Core audits and repairs |
-| `huggingface_api_key` | Image generation |
-
-### 2. Optional `.env` file
-
-```bash
-Copy-Item .env.example .env
-```
-
-Only needed for phone mirroring (`NEXUS_ADB_PATH`, `NEXUS_PHONE_PIN`) or voice fallback (`GROQ_API_KEY`). Everything has a working default without it.
-
-### 3. Optional: Gmail + Google
-
-- **Gemini via Google account:** Settings → *Link Google* (no key needed).
-- **Gmail reading/sending:** Settings → *Link Gmail*. First link needs a Google Cloud **Desktop-app** OAuth client saved as `client_secret.json` in the project root (gitignored). Without it, mail features simply report "not linked" — nothing breaks.
-
-### 4. Optional components (all degrade gracefully if missing)
-
-| Component | Install | If missing |
-|---|---|---|
-| OCR text in screenshots | Tesseract binary (`winget install UB-Mannheim.TesseractOCR`) | OCR steps report unavailable |
-| Phone mirror / ADB control | `adb` + `scrcpy` on PATH, `ws-scrcpy/` folder | Phone panel reports unavailable |
-| Desktop app window | `npm run build`, then `npm run electron` (dev: backend + `npm run dev` + `npm run electron`) | Use the browser at `:3000` instead |
-
-All runtime folders (`work_files/`, `backend/data/`, `downloads/`) are **auto-created on first run** — there is nothing to copy from another machine, and nothing personal is required.
-
-### Troubleshooting a fresh clone
-
-- `vite` / `uvicorn` not recognized → virtualenv or `node_modules` step missed above.
-- Port `3000`/`8000` in use → stop the other copy; the ports are fixed (`vite.config.js`, `main.py`).
-- `python -m playwright install chromium` fixes "browser won't launch".
-- PowerShell blocks `.venv\Scripts\activate` → `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned`.
-- Blank AI answers with no keys → expected: you're in offline mode; add a Gemini key or link Google.
-
----
-
-## Running NEXUS
-
-The convenience launcher can start the backend and frontend:
-
-```bash
-python start_nexus.py
-```
-
-Or run them separately:
-
-```bash
-# Backend
-.venv\\Scripts\\activate
-uvicorn main:app --host 127.0.0.1 --port 8000
-
-# Frontend
+\`\`\`powershell
 npm run dev
-```
+\`\`\`
 
-The dashboard normally runs at:
+- React development UI: \`http://localhost:5173\` (see \`vite.config.js\`).
+- FastAPI: \`http://127.0.0.1:8000\`
+- Zetaris UI: typically \`http://localhost:3000\` in the local Docker setup.
+- Nightshift OpenAI-compatible base URL: \`http://127.0.0.1:8088/v1\` when its runtime is active.
 
-```text
-http://localhost:3000
-```
+These are local development addresses, not hosted public demo URLs.
 
-The FastAPI documentation is available at:
+### Configuration
 
-```text
-http://127.0.0.1:8000/docs
-```
+Use the NEXUS Settings UI / secure local backend configuration for relevant fields:
+- \`zetaris_base_url\`, \`zetaris_username\`, \`zetaris_password\`, \`zetaris_org_id\`
+- \`meterless_base_url\`, \`meterless_runtime_token\`, \`meterless_app_id\`, routing mode
+- NVIDIA API key and selected agricultural reasoning model
+- OpenRouteService API key
+- data.gov.in API key (and valid dataset/resource ID where supported)
 
----
+Nightshift's proxy token and NVIDIA API key are **different credentials**. Never paste either into README, screenshots, issue reports, or Git. Local \`config.json\`, tokens and state must remain excluded from Git. Review history for exposed secrets and rotate any that were exposed.
 
-## Development principles
+A saved key means *configured*, not necessarily *connected*. Verify real authenticated requests and log redacted status codes and trace IDs. Avoid storing browser-side raw secrets.
 
-1. Prefer semantic UI Automation over guessed coordinates.
-2. Report results honestly instead of assuming success.
-3. Keep actions bounded and recoverable.
-4. Make targeted changes and fix root causes rather than symptoms.
-5. Preserve existing working functionality.
+## Development workflow and credits disclosure
 
----
+NEXUS was built iteratively using an AI-assisted coding workflow with **OpenCode**, including use of **NVIDIA Nemotron 3 Ultra 550B A55B** for development assistance. The product runtime and development assistant are separate: using Ultra to help write code is not proof that the deployed NEXUS assistant invoked Ultra for a given response.
 
-## Security
+We explored the **Cursor** sponsor option but **did not use Cursor for the implementation** because the team could not confirm the credit redemption/setup process in time. We do not claim Cursor sponsor usage, credits, or bonus eligibility.
 
-Never commit:
+We used **Zetaris** to bridge the FPO PostgreSQL source with the agricultural query layer and **Meterless/Nightshift** as the intended provider/orchestration interface for NVIDIA-hosted models. Actual sponsor-technology usage should be demonstrated by query results, runtime receipts and redacted traces, not badges alone.
 
-- API keys
-- OAuth credentials
-- `.env` files containing secrets
-- `config.json` containing live credentials
-- `client_secret.json`
-- Authentication cookies
-- Browser profiles containing personal sessions
-- Private certificates
-- Personal/private data
+## Verification, contributions and license
 
-Use environment variables or a **gitignored** local configuration file.
+Run the project's test suite and frontend build before merging changes:
 
----
+\`\`\`powershell
+python -m pytest -q
+npm run build
+\`\`\`
 
-## Current development focus
+Do not commit credentials, real personal/farmer data, browser sessions or private logs. Preserve reproducible examples and indicate when evidence is synthetic, unavailable, or stale.
 
-NEXUS contains many capabilities, but development is intentionally focused rather than attempting to build everything simultaneously.
+See \`HACKATHON_2026_IMPLEMENTATION_PLAN.md\` for implementation history and outstanding integration checks.
 
-### Current priority
-
-- Conversation and memory
-- Browser automation
-- Voice
-- Research and document generation
-- Code Intelligence
-
-### Existing but lower-priority capabilities
-
-- Android / ADB integration
-- Phone mirroring
-- Watchdog/support utilities
-- Additional experimental integrations
-
-These remain part of NEXUS. They are simply outside the main development path at the moment.
-
----
-
-## Roadmap
-
-### Phase 1 — Conversation and Memory
-Memory, context, and reminders.
-
-### Phase 2 — Desktop Control & Vision
-Windows UI Automation, browser control, and vision support.
-
-### Phase 3 — Research & Presentation Generation
-Source extraction, analysis, comparison, synthesis and structured Word/PPT generation.
-
-### Phase 4 — Document & File Expansion
-Charts, tables, document gallery and broader file support.
-
-### Phase 5 — Code Intelligence
-Self-audit, Nemotron repair, validation, rollback and uploaded-file inspection.
-
-### Future expansion
-
-Continue improving the core assistant while gradually bringing additional existing capabilities into the main workflow.
-
----
-
-## Contributing
-
-NEXUS is an evolving project.
-
-If you want to contribute:
-
-1. Understand the current architecture.
-2. Keep changes focused.
-3. Preserve existing functionality.
-4. Test changes before submitting them.
-5. Document meaningful architectural changes.
-6. Avoid committing secrets, generated runtime state or personal files.
-
----
-
-## License
-
-No open-source license has currently been declared in this repository. Until a license is added, the source remains subject to the repository owner's default copyright.
-
----
-
-## Project
-
-**N.E.X.U.S. — Networked EXpert for Unified Synthesis**
-
-*A direct-command assistant — clear requests, supported actions, honest results.*
-
-Built with the goal of creating a capable, transparent and extensible AI assistant for everyday computer tasks.
+**License:** No license is declared here; repository content remains subject to applicable copyright until the owner chooses a license.
