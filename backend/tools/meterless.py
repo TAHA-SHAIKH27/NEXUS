@@ -26,7 +26,7 @@ PROVIDER_NAME = "Meterless Runtime"
 DEFAULT_BASE_URL = "http://127.0.0.1:8088/v1"
 APP_ID = "nexus"
 PLACEHOLDER_TOKEN = "rt-local"
-DEFAULT_TIMEOUT_SECONDS = 180
+DEFAULT_TIMEOUT_SECONDS = 10
 DEFAULT_MODEL = "meterless/auto"
 DETECT_PORTS = (8088, 8090, 8787, 11434)
 DETECT_HOSTS = ("127.0.0.1", "localhost", "[::1]")
@@ -133,7 +133,7 @@ class MeterlessConfig:
     app_id: str = APP_ID
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
     default_model: str = DEFAULT_MODEL
-    max_retries: int = 2
+    max_retries: int = 0
 
     @classmethod
     def from_config_dict(cls, config: Optional[Dict[str, Any]] = None) -> "MeterlessConfig":

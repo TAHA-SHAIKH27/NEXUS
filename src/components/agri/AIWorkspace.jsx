@@ -62,6 +62,103 @@ import Nexus3DCore from '../Nexus3DCore';
 
 
 
+
+
+// ThinkingIndicator component - dynamic progressive thinking animation
+const ThinkingIndicator = () => {
+  const steps = [
+    { id: 1, label: 'Querying analytical database views...', icon: Database },
+    { id: 2, label: 'Fetching batch & spoilage data...', icon: FileText },
+    { id: 3, label: 'Analyzing mandi price trends...', icon: BarChart2 },
+    { id: 4, label: 'Calculating transport & logistics...', icon: Truck },
+    { id: 5, label: 'Checking weather & spoilage risk...', icon: Cloud },
+    { id: 6, label: 'Running financial comparison models...', icon: Calculator },
+    { id: 7, label: 'Formulating recommendations...', icon: Brain },
+  ];
+
+  return (
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '0.5rem',
+      padding: '1rem',
+      background: 'rgba(14, 165, 233, 0.08)',
+      border: '1px solid rgba(14, 165, 233, 0.2)',
+      borderRadius: '12px',
+      maxWidth: '480px',
+      alignSelf: 'flex-start',
+      boxShadow: '0 4px 20px rgba(14, 165, 233, 0.15)'
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0.5rem',
+        color: '#38bdf8',
+        fontSize: '0.8rem',
+        fontWeight: 600,
+        marginBottom: '0.5rem'
+      }}>
+        <Loader2 size={16} className="animate-spin" />
+        <span>NEXUS is thinking...</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+        {steps.map((step, index) => (
+          <ThinkingStepRow key={step.id} step={step} index={index} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// Individual step row with animated status
+const ThinkingStepRow = ({ step, index }) => {
+  const [status, setStatus] = useState('pending');
+  
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setStatus('active');
+      setTimeout(() => setStatus('complete'), 800);
+    }, index * 600);
+    return () => clearTimeout(timer);
+  }, [index]);
+  
+  const statusColors = {
+    pending: 'rgba(148, 163, 184, 0.4)',
+    active: '#38bdf8',
+    complete: '#10b981'
+  };
+  
+  const statusIcons = {
+    pending: <span style={{ width: '18px', height: '18px', borderRadius: '50%', border: '2px solid rgba(148, 163, 184, 0.4)', display: 'inline-flex' }} />,
+    active: <Loader2 size={16} className="animate-spin" style={{ color: '#38bdf8' }} />,
+    complete: <CheckCircle2 size={16} style={{ color: '#10b981' }} />
+  };
+  
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', opacity: status === 'pending' ? 0.5 : 1, transition: 'opacity 0.3s ease' }}>
+      <div style={{ 
+        width: '18px', 
+        height: '18px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        flexShrink: 0
+      }}>
+        {statusIcons[status]}
+      </div>
+      <step.icon size={14} style={{ color: statusColors[status], flexShrink: 0 }} />
+      <span style={{ 
+        fontSize: '0.8rem', 
+        color: status === 'pending' ? 'var(--text-muted)' : '#e0e7ff',
+        transition: 'color 0.3s ease',
+        fontWeight: status === 'active' ? 600 : 400
+      }}>
+        {step.label}
+      </span>
+    </div>
+  );
+};
+
 export default function AIWorkspace({
 
   messages = [],
@@ -252,82 +349,314 @@ export default function AIWorkspace({
 
 
 
-  const renderMessageContent = (m) => {
-    // Parse structured response sections from text
-    const parseStructuredResponse = (text) => {
-      const sections = {};
-      const sectionHeaders = [
-        'EXECUTIVE SUMMARY',
-        'CURRENT SITUATION',
-        'MARKET ANALYSIS',
-        'TRANSPORT & LOGISTICS',
-        'WEATHER & SPOILAGE RISK',
-        'FINANCIAL COMPARISON',
-        'FEASIBILITY & UNCERTAINTY',
-        'RECOMMENDATION',
-        'PRACTICAL NEXT STEPS',
-        'MISSING EVIDENCE & ASSUMPTIONS'
-      ];
+const renderMessageContent = (m) => {
+    // Simple Markdown to HTML converter for key elements
+    const renderMarkdown = (text) => {
+      if (!text) return '';
       
-      let currentSection = 'EXECUTIVE SUMMARY';
-      let currentContent = [];
+      // Split into lines for processing
+      const lines = text.split('\n');
+      const htmlLines = [];
+      let inTable = false;
+      let tableHeader = null;
+      let tableRows = [];
+      let inCodeBlock = false;
+      let codeBlockLang = '';
+      let codeBlockContent = [];
       
-      text.split('\n').forEach(line => {
-        const trimmed = line.trim();
-        const matchedHeader = sectionHeaders.find(h => trimmed === `## ${h}` || trimmed === `### ${h}`);
-        if (matchedHeader) {
-          if (currentContent.length > 0) {
-            sections[currentSection] = currentContent.join('\n').trim();
-          }
-          currentSection = matchedHeader;
-          currentContent = [];
-        } else {
-          currentContent.push(line);
+      const flushTable = () => {
+        if (tableHeader && tableRows.length > 0) {
+          htmlLines.push('<table class="markdown-table">');
+          htmlLines.push('<thead><tr>' + tableHeader.map(h => '<th>' + h + '</th>').join('') + '</tr></thead>');
+          htmlLines.push('<tbody>' + tableRows.map(row => 
+            '<tr>' + row.map(cell => '<td>' + cell + '</td>').join('') + '</tr>'
+          ).join('') + '</tbody>');
+          htmlLines.push('</table>');
         }
-      });
-      if (currentContent.length > 0) {
-        sections[currentSection] = currentContent.join('\n').trim();
+        inTable = false;
+        tableHeader = null;
+        tableRows = [];
+      };
+      
+      const flushCodeBlock = () => {
+        if (codeBlockContent.length > 0) {
+          htmlLines.push('<pre class="markdown-code"><code class="language-' + codeBlockLang + '">' + codeBlockContent.join('\n') + '</code></pre>');
+        }
+        inCodeBlock = false;
+        codeBlockLang = '';
+        codeBlockContent = [];
+      };
+      
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        const trimmed = line.trim();
+        
+        // Code blocks
+        if (trimmed.startsWith('```')) {
+          if (!inCodeBlock) {
+            flushTable();
+            inCodeBlock = true;
+            codeBlockLang = trimmed.slice(3).trim();
+            codeBlockContent = [];
+          } else {
+            flushCodeBlock();
+          }
+          continue;
+        }
+        
+        if (inCodeBlock) {
+          codeBlockContent.push(line);
+          continue;
+        }
+        
+        // Tables (GitHub-flavored markdown)
+        if (trimmed.startsWith('|') && trimmed.endsWith('|')) {
+          if (!inTable) {
+            flushCodeBlock();
+            inTable = true;
+          }
+          const cells = trimmed.slice(1, -1).split('|').map(c => c.trim());
+          if (tableHeader === null) {
+            tableHeader = cells;
+          } else if (cells.every(c => /^[-:]+$/.test(c))) {
+            // Separator row - skip
+          } else {
+            tableRows.push(cells);
+          }
+          continue;
+        } else if (inTable) {
+          flushTable();
+        }
+        
+        // Headers
+        const headerMatch = trimmed.match(/^(#{1,3})\s+(.+)$/);
+        if (headerMatch) {
+          flushTable();
+          const level = headerMatch[1].length;
+          const content = headerMatch[2];
+          htmlLines.push('<h' + level + ' style="margin: 1rem 0 0.5rem; color: #38bdf8; font-weight: 700;">' + content + '</h' + level + '>');
+          continue;
+        }
+        
+        // Bold and italic (inline)
+        let processedLine = line
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          .replace(/`(.+?)`/g, '<code>$1</code>');
+        
+        // Bullet points
+        if (trimmed.match(/^[-*+]\s+/)) {
+          flushTable();
+          const content = trimmed.replace(/^[-*+]\s+/, '');
+          htmlLines.push('<li>' + processedLine.replace(/^[-*+]\s+/, '') + '</li>');
+          continue;
+        }
+        
+        // Numbered lists
+        if (trimmed.match(/^\d+\.\s+/)) {
+          flushTable();
+          const content = trimmed.replace(/^\d+\.\s+/, '');
+          htmlLines.push('<li>' + processedLine.replace(/^\d+\.\s+/, '') + '</li>');
+          continue;
+        }
+        
+        // Regular paragraph
+        if (trimmed) {
+          flushTable();
+          htmlLines.push('<p style="margin: 0.5rem 0; line-height: 1.7;">' + processedLine + '</p>');
+        } else if (htmlLines.length > 0 && !htmlLines[htmlLines.length - 1].startsWith('<p') && !htmlLines[htmlLines.length - 1].startsWith('<table') && !htmlLines[htmlLines.length - 1].startsWith('<pre')) {
+          // Empty line - add spacing
+        }
       }
       
-      return sections;
+      flushTable();
+      flushCodeBlock();
+      
+      // Wrap consecutive <li> in <ul>
+      let finalHtml = htmlLines.join('\n');
+      finalHtml = finalHtml.replace(/(<li>.*<\/li>\n?)+/g, (match) => '<ul style="margin: 0.5rem 0; padding-left: 1.5rem;">' + match + '</ul>');
+      
+      return finalHtml;
     };
-    
-    const renderSection = (title, content) => {
-      if (!content || !content.trim()) return null;
+
+    // Render provider badge if available
+    const renderProviderBadge = (reasoning) => {
+      if (!reasoning) return null;
+      const provider = reasoning.provider;
+      const live = reasoning.live;
+      if (!provider) return null;
+      
+      let badgeColor = '#64748b'; // gray
+      if (provider === 'meterless') badgeColor = '#10b981';
+      else if (provider === 'nvidia_nim') badgeColor = '#76b900';
+      else if (provider === 'deterministic') badgeColor = '#64748b';
+      
       return (
-        <div style={{ marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '0.5rem', 
-            marginBottom: '0.5rem',
-            fontSize: '0.8rem',
-            fontWeight: 700,
-            color: '#38bdf8',
-            textTransform: 'uppercase',
-            letterSpacing: '0.05em'
-          }}>
-            {title}
-          </div>
-          <div style={{ 
-            whiteSpace: 'pre-wrap', 
-            lineHeight: 1.6, 
-            fontSize: '0.85rem',
-            color: '#e0e7ff'
-          }}>
-            {content}
-          </div>
-        </div>
+        <span style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '0.35rem',
+          padding: '0.15rem 0.5rem',
+          borderRadius: '9999px',
+          fontSize: '0.65rem',
+          fontWeight: 600,
+          textTransform: 'uppercase',
+          letterSpacing: '0.05em',
+          background: badgeColor + '20',
+          color: badgeColor,
+          marginBottom: '0.5rem'
+        }}>
+          {live && <span style={{width: '6px', height: '6px', borderRadius: '50%', background: badgeColor, animation: 'pulse 1.5s infinite'}} />}
+          {provider === 'meterless' ? 'Meterless/Nightshift' : provider === 'nvidia_nim' ? 'NVIDIA Nemotron' : 'Deterministic'}
+          {live && ' (Live)'}
+        </span>
       );
     };
-    
-    // Handle simple text messages (user messages or simple responses)
-    if (m.text && !m.fileData) {
+
+    // Handle simple text messages (user messages)
+    if (m.text && !m.fileData && !m.reasoning) {
       return <div style={{ whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{m.text}</div>;
     }
     
-    // Handle structured AI responses with sections
+    // Handle AI responses with full Nemotron response
+    if (m.text && (m.reasoning || m.text.includes('## ') || m.text.includes('|'))) {
+      return (
+        <div style={{ lineHeight: 1.7 }}>
+          {/* Provider badge */}
+          {renderProviderBadge(m.reasoning)}
+          
+          {/* Main content - render as Markdown */}
+          <div 
+            style={{ 
+              whiteSpace: 'pre-wrap', 
+              lineHeight: 1.7,
+              fontSize: '0.85rem',
+              color: '#e0e7ff'
+            }}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(m.text) }}
+          />
+          
+          {/* Evidence Sources */}
+          {m.fileData?.evidence && m.fileData.evidence.length > 0 && (
+            <details style={{ marginTop: '1rem' }}>
+              <summary style={{ cursor: 'pointer', color: '#38bdf8', fontSize: '0.75rem', fontWeight: 600 }}>
+                Evidence Sources ({m.fileData.evidence.length})
+              </summary>
+              <ul style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: 'var(--text-muted)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.25rem' }}>
+                {m.fileData.evidence.map((src, i) => (
+                  <li key={i} style={{ fontFamily: 'var(--font-mono)' }}>
+                    {src.source}: {src.identifier}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          
+          {/* Warnings */}
+          {m.fileData?.warnings && m.fileData.warnings.length > 0 && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: '6px', background: 'rgba(251, 113, 133, 0.1)', border: '1px solid rgba(251, 113, 133, 0.3)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#fb7185', fontSize: '0.7rem', fontWeight: 600, marginBottom: '0.5rem' }}>
+                <AlertTriangle size={12} />
+                Warnings & Missing Evidence
+              </div>
+              <ul style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 0, paddingLeft: '1.25rem', lineHeight: 1.8 }}>
+                {m.fileData.warnings.map((w, i) => (
+                  <li key={i}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          
+          {/* Provider metadata in collapsible panel */}
+          {m.reasoning && (
+            <details style={{ marginTop: '1rem' }}>
+              <summary style={{ cursor: 'pointer', color: '#38bdf8', fontSize: '0.75rem', fontWeight: 600 }}>
+                Provider Metadata
+              </summary>
+              <div style={{ marginTop: '0.5rem', fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                <div>Provider: {m.reasoning.provider}</div>
+                <div>Live Model: {m.reasoning.live ? 'Yes' : 'No'}</div>
+                <div>Validation: {m.reasoning.validation?.ok ? 'Passed' : 'Failed'}</div>
+                {m.reasoning.attempts && (
+                  <div>Attempts: {m.reasoning.attempts.length}</div>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
+      );
+    }
+    
+    // Handle structured AI responses with sections (legacy format with ## headers)
     if (m.fileData && m.text && m.text.includes('## ')) {
+      // ... existing section parsing code
+      const parseStructuredResponse = (text) => {
+        const sections = {};
+        const sectionHeaders = [
+          'EXECUTIVE SUMMARY',
+          'CURRENT SITUATION',
+          'MARKET ANALYSIS',
+          'TRANSPORT & LOGISTICS',
+          'WEATHER & SPOILAGE RISK',
+          'FINANCIAL COMPARISON',
+          'FEASIBILITY & UNCERTAINTY',
+          'RECOMMENDATION',
+          'PRACTICAL NEXT STEPS',
+          'MISSING EVIDENCE & ASSUMPTIONS'
+        ];
+        
+        let currentSection = 'EXECUTIVE SUMMARY';
+        let currentContent = [];
+        
+        text.split('\n').forEach(line => {
+          const trimmed = line.trim();
+          const matchedHeader = sectionHeaders.find(h => trimmed === '## ' + h || trimmed === '### ' + h);
+          if (matchedHeader) {
+            if (currentContent.length > 0) {
+              sections[currentSection] = currentContent.join('\n').trim();
+            }
+            currentSection = matchedHeader;
+            currentContent = [];
+          } else {
+            currentContent.push(line);
+          }
+        });
+        if (currentContent.length > 0) {
+          sections[currentSection] = currentContent.join('\n').trim();
+        }
+        
+        return sections;
+      };
+      
+      const renderSection = (title, content) => {
+        if (!content || !content.trim()) return null;
+        return (
+          <div style={{ marginBottom: '1rem', paddingBottom: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '0.5rem', 
+              marginBottom: '0.5rem',
+              fontSize: '0.8rem',
+              fontWeight: 700,
+              color: '#38bdf8',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em'
+            }}>
+              {title}
+            </div>
+            <div style={{ 
+              whiteSpace: 'pre-wrap', 
+              lineHeight: 1.6, 
+              fontSize: '0.85rem',
+              color: '#e0e7ff'
+            }}>
+              {content}
+            </div>
+          </div>
+        );
+      };
+      
       const sections = parseStructuredResponse(m.text);
       return (
         <>

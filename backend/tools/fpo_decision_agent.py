@@ -799,16 +799,22 @@ def reason_with_models(
         }
 
     if meterless_client is not None:
-        result = _try("meterless", lambda: meterless_client.chat(prompt, system_prompt=REASONING_SYSTEM, model="meterless/deep"), True)
-        if result and result.get("validation", {}).get("ok"):
-            result["attempts"] = attempts
-            return result
+        try:
+            result = _try("meterless", lambda: meterless_client.chat(prompt, system_prompt=REASONING_SYSTEM, model="meterless/deep"), True)
+            if result and result.get("validation", {}).get("ok"):
+                result["attempts"] = attempts
+                return result
+        except Exception as exc:
+            attempts.append({"provider": "meterless", "status": "error", "message": f"Timeout or error: {exc}", "live": False})
 
     if nvidia_client is not None:
-        result = _try("nvidia_nim", lambda: nvidia_client.chat(prompt, system_prompt=REASONING_SYSTEM), True)
-        if result and result.get("validation", {}).get("ok"):
-            result["attempts"] = attempts
-            return result
+        try:
+            result = _try("nvidia_nim", lambda: nvidia_client.chat(prompt, system_prompt=REASONING_SYSTEM), True)
+            if result and result.get("validation", {}).get("ok"):
+                result["attempts"] = attempts
+                return result
+        except Exception as exc:
+            attempts.append({"provider": "nvidia_nim", "status": "error", "message": f"Timeout or error: {exc}", "live": False})
 
     cfg = config or {}
     # Only attempt live HTTP if callers did not inject clients AND a token/key exists.
@@ -821,7 +827,7 @@ def reason_with_models(
             if checked["ok"]:
                 return {"provider": "meterless", "live": True, "text": checked["text"], "validation": checked, "attempts": attempts}
         except Exception as exc:
-            attempts.append({"provider": "meterless", "status": "error", "message": str(exc), "live": False})
+            attempts.append({"provider": "meterless", "status": "error", "message": f"Timeout or error: {exc}", "live": False})
 
     if nvidia_client is None and (cfg.get("nvidia_api_key") or "").strip():
         try:
@@ -831,7 +837,7 @@ def reason_with_models(
             if checked["ok"]:
                 return {"provider": "nvidia_nim", "live": True, "text": checked["text"], "validation": checked, "attempts": attempts}
         except Exception as exc:
-            attempts.append({"provider": "nvidia_nim", "status": "error", "message": str(exc), "live": False})
+            attempts.append({"provider": "nvidia_nim", "status": "error", "message": f"Timeout or error: {exc}", "live": False})
 
     text = _deterministic_explanation(finance, evidence)
     return {
