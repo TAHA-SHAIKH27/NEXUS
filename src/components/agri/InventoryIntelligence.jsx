@@ -119,7 +119,7 @@ export default function InventoryIntelligence() {
           </div>
         </div>
 
-        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
+        <form onSubmit={(e) => { e.preventDefault(); handleSearchSubmit(e); return false; }} style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center' }}>
           {/* Search box */}
           <div style={{ flex: '1', minWidth: '220px', position: 'relative' }}>
             <Search size={16} style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-faint)' }} />

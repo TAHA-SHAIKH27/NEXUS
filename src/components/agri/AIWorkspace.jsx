@@ -466,7 +466,7 @@ export default function AIWorkspace({
         </div>
 
         {/* Chat Input Bar */}
-        <form onSubmit={handleSubmit} className="agri-card" style={{ padding: '0.65rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+        <form onSubmit={(e) => { e.preventDefault(); handleSubmit(e); return false; }} className="agri-card" style={{ padding: '0.65rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <input
             type="text"
             value={input}

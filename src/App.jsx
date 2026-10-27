@@ -3,6 +3,19 @@ import './components/agri/agri-theme.css';
 
 // Live dashboard stack - using REST polling (Socket.IO not implemented in backend)
 import { useNexusStore } from './store/nexusStore';
+
+// DIAGNOSTIC: Catch page unload/reload events
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', (e) => {
+    console.log('[DIAGNOSTIC] beforeunload triggered', new Error().stack);
+  });
+  window.addEventListener('pagehide', (e) => {
+    console.log('[DIAGNOSTIC] pagehide triggered', e.persisted, new Error().stack);
+  });
+  window.addEventListener('unload', () => {
+    console.log('[DIAGNOSTIC] unload triggered', new Error().stack);
+  });
+}
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from 'sonner';
 

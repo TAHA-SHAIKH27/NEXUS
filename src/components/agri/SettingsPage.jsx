@@ -227,7 +227,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <form onSubmit={(e) => { e.preventDefault(); handleSave(e); return false; }} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         {/* Zetaris Gateway Config */}
         <div className="agri-card" style={{ padding: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem' }}>
