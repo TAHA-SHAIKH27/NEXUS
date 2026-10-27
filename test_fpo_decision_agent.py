@@ -146,7 +146,9 @@ def test_missing_data_warnings_on_outage():
 
 def test_llm_numbers_not_in_finance_are_rejected():
     finance = {"estimated_net_inr": 22750.0, "quantity_kg": 1000}
-    checked = validate_reasoning("Sell for 999999 rupees on 3 kg", finance)
+    # Build evidence_package with KEY_NUMBERS_TO_QUOTE from finance
+    evidence_package = {"KEY_NUMBERS_TO_QUOTE": finance}
+    checked = validate_reasoning("Sell for 999999 rupees on 3 kg", {"KEY_NUMBERS_TO_QUOTE": finance})
     assert checked["ok"] is False
     assert "999999" in checked["invented_tokens"]
 

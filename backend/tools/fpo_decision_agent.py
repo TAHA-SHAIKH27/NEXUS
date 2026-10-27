@@ -45,11 +45,78 @@ INTENT_INVENTORY = "inventory"
 INTENT_GENERAL = "general"
 
 REASONING_SYSTEM = (
-    "You are NEXUS, an FPO agricultural decision explainer. "
-    "You receive JSON with already-computed financials and evidence. "
-    "Explain the recommendation in plain English. "
-    "Do not invent, alter, or add any numeric values. "
-    "If a figure is missing, say it is missing. Quote only numbers present in the JSON."
+    "You are NEXUS, an FPO agricultural decision intelligence analyst. "
+    "You receive structured JSON containing: verified evidence (inventory batches, market prices, transport routes, weather), "
+    "and a KEY_NUMBERS_TO_QUOTE section with pre-computed financial figures. "
+    "Your task: produce a comprehensive, professional agricultural decision report. "
+    "\n\n"
+    "⚠️ CRITICAL: YOU ARE AN EXPLAINER, NOT A CALCULATOR. ⚠️\n"
+    "ALL FINANCIAL CALCULATIONS HAVE ALREADY BEEN DONE BY A DETERMINISTIC ENGINE. "
+    "DO NOT PERFORM ANY CALCULATIONS. DO NOT COMPUTE NEW NUMBERS. DO NOT ESTIMATE. "
+    "YOUR ONLY JOB: EXPLAIN THE NUMBERS ALREADY PROVIDED IN THE 'KEY_NUMBERS_TO_QUOTE' SECTION. "
+    "IF A NUMBER IS NOT IN THE 'KEY_NUMBERS_TO_QUOTE' SECTION, STATE 'Data not available' — DO NOT ESTIMATE. "
+    "\n\n"
+    "MANDATORY STRUCTURE - Use exactly these section headers:\n"
+    "## EXECUTIVE SUMMARY\n"
+    "Direct answer to the user's question in 2-3 sentences. Use ONLY numbers from the 'KEY_NUMBERS_TO_QUOTE' section.\n"
+    "\n"
+    "## CURRENT SITUATION\n"
+    "Crop, batch details, quantities, harvest dates, storage locations, quality window, spoilage risk level. "
+    "Cite specific batch IDs from evidence. Use ONLY numbers from KEY_NUMBERS_TO_QUOTE.\n"
+    "\n"
+    "## MARKET ANALYSIS\n"
+    "Compare destination markets using actual price observations. "
+    "Table format: Market | Variety | Modal Price (₹/quintal) | Observation Date | Source. "
+    "Use ONLY prices from the 'market_summary' or KEY_NUMBERS_TO_QUOTE. If prices missing, state which markets lack data.\n"
+    "\n"
+    "## TRANSPORT & LOGISTICS\n"
+    "Road routes from storage to each market. "
+    "Table: Destination | Distance (km) | Duration (hrs) | Vehicle | Cost (₹/kg) | Total Cost (₹) | Trips Needed. "
+    "Use ONLY numbers from 'transport_summary' and KEY_NUMBERS_TO_QUOTE. Account for vehicle capacity vs quantity.\n"
+    "\n"
+    "## WEATHER & SPOILAGE RISK\n"
+    "Forecast at origin, destination, and en route. "
+    "Temperature, humidity, precipitation, heat stress days. "
+    "Estimated quality deterioration during transit + storage. "
+    "Use ONLY 'weather_summary'. If weather data missing, state so. DO NOT ESTIMATE.\n"
+    "\n"
+    "## FINANCIAL COMPARISON\n"
+    "For each feasible destination, reference ONLY the pre-computed values in KEY_NUMBERS_TO_QUOTE:\n"
+    "- Expected saleable quantity (kg): use KEY_NUMBERS_TO_QUOTE.quantity_kg_at_risk\n"
+    "- Gross revenue (₹): use KEY_NUMBERS_TO_QUOTE.sell_now_estimated_net_inr (already computed)\n"
+    "- Transport cost (₹): use KEY_NUMBERS_TO_QUOTE.sell_now_transport_per_kg_inr (per kg rate)\n"
+    "- Storage cost (₹): use KEY_NUMBERS_TO_QUOTE.hold_proxy_storage_cost_per_kg_day_inr if available\n"
+    "- Net proceeds (₹): use KEY_NUMBERS_TO_QUOTE.sell_now_estimated_net_inr or KEY_NUMBERS_TO_QUOTE.hold_proxy_estimated_net_inr\n"
+    "- Profit/loss vs historical procurement cost: state if data unavailable\n"
+    "If data missing for a market, mark as 'Insufficient data - cannot rank'. DO NOT ESTIMATE.\n"
+    "\n"
+    "## FEASIBILITY & UNCERTAINTY\n"
+    "Quality window vs total transit+market time (use KEY_NUMBERS_TO_QUOTE.days_until_quality_window_end). "
+    "Truck availability assumptions. "
+    "Market acceptance risk. "
+    "Worst-case loss exposure (only if in KEY_NUMBERS_TO_QUOTE).\n"
+    "\n"
+    "## RECOMMENDATION\n"
+    "Primary: [Destination] - [key reason with numbers from KEY_NUMBERS_TO_QUOTE]\n"
+    "Alternative: [Destination] - [key reason with numbers from KEY_NUMBERS_TO_QUOTE]\n"
+    "If all options lose money: recommend least-loss option with rationale from KEY_NUMBERS_TO_QUOTE.\n"
+    "\n"
+    "## PRACTICAL NEXT STEPS\n"
+    "1. [Immediate dispatch action]\n"
+    "2. [Booking/coordination needed]\n"
+    "3. [Monitoring during transit]\n"
+    "\n"
+    "## MISSING EVIDENCE & ASSUMPTIONS\n"
+    "List every data gap that affects confidence. "
+    "Distinguish: observed (from APIs), calculated (deterministic), assumed (operator input).\n"
+    "\n"
+    "CRITICAL RULES:\n"
+    "- NEVER invent numbers. Only use values from the provided JSON, especially the 'KEY_NUMBERS_TO_QUOTE' section.\n"
+    "- If a figure is missing from 'KEY_NUMBERS_TO_QUOTE', explicitly state 'Data not available for [X]' — DO NOT ESTIMATE.\n"
+    "- Quote exact numbers from 'KEY_NUMBERS_TO_QUOTE' section. Do not round unless the source does.\n"
+    "- For inventory queries (listing batches), return a clean table only - skip financial sections.\n"
+    "- For simple questions, be concise. For 'analyze/compare/recommend' questions, use full structure.\n"
+    "- Tone: professional, decisive, farmer-facing."
 )
 
 
@@ -437,27 +504,138 @@ def calculate_finance(evidence: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _extract_numbers(text: str) -> List[str]:
-    return re.findall(r"\d+(?:\.\d+)?", text or "")
+    """Extract numbers from text, handling comma-separated thousands (e.g., 1,000, 63,352.32)
+    and plain numbers without commas. Avoids splitting numbers like 63352.32 into 633 and 52.32."""
+    # Match either:
+    # - Comma-formatted: 1-3 digits, then REQUIRED groups of comma+3 digits, optional decimal
+    # - Plain numbers without commas: digits, optional decimal
+    return re.findall(r"\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?", text or "")
 
 
-def _allowed_number_tokens(finance: Dict[str, Any]) -> set:
-    blob = json.dumps(finance, default=str)
-    return set(_extract_numbers(blob))
+def _is_key_financial_number(token: str) -> bool:
+    """Heuristic: is this a key financial figure worth validating? Ignore dates, IDs, counts."""
+    normalized = token.replace(",", "")
+    try:
+        val = float(normalized)
+        # Ignore small integers (likely counts, years, IDs)
+        if val == int(val) and val < 1000:
+            return False
+        # Ignore years (2020-2030)
+        if 2020 <= val <= 2030 and val == int(val):
+            return False
+        # Ignore small decimals that are likely percentages or rates < 1
+        if 0 < val < 1:
+            return False
+        return True
+    except ValueError:
+        return False
 
 
-def validate_reasoning(text: str, finance: Dict[str, Any]) -> Dict[str, Any]:
-    allowed = _allowed_number_tokens(finance)
+def _float_value(token: str) -> float:
+    """Extract float value from token, handling commas."""
+    return float(token.replace(",", ""))
+
+
+def _normalize_number(token: str) -> str:
+    """Normalize a number token for comparison: remove commas, leading zeros, ensure consistent decimal."""
+    # Remove commas
+    token = token.replace(",", "")
+    # Remove leading zeros from integer part (but keep at least one digit)
+    if "." in token:
+        int_part, dec_part = token.split(".", 1)
+        int_part = int_part.lstrip("0") or "0"
+        # Remove trailing zeros from decimal part
+        dec_part = dec_part.rstrip("0")
+        if dec_part:
+            return f"{int_part}.{dec_part}"
+        else:
+            return int_part
+    else:
+        return token.lstrip("0") or "0"
+
+
+def _allowed_number_tokens(evidence_package: Dict[str, Any]) -> set:
+    """Extract all numeric tokens from the full evidence package for validation, normalized."""
+    blob = json.dumps(evidence_package, default=str)
+    raw_numbers = _extract_numbers(blob)
+    return set(_normalize_number(n) for n in raw_numbers)
+
+
+def _numbers_equivalent(a: str, b: str, rel_tol: float = 0.02) -> bool:
+    """Check if two number strings represent the same value within 2% tolerance.
+    Handles comma-formatted numbers and ignores minor precision differences."""
+    try:
+        a_clean = a.replace(",", "")
+        b_clean = b.replace(",", "")
+        fa = float(a_clean)
+        fb = float(b_clean)
+        # Use 2% relative tolerance for financial numbers
+        if max(abs(fa), abs(fb)) > 1000:
+            return abs(fa - fb) <= rel_tol * max(abs(fa), abs(fb))
+        else:
+            # For smaller numbers, use absolute tolerance of 0.01
+            return abs(fa - fb) <= 0.01
+    except (ValueError, ZeroDivisionError):
+        return a == b
+
+
+def _is_simple_arithmetic_combination(token_val: float, allowed_floats: set, rel_tol: float = 0.02) -> bool:
+    """Check if token_val is a simple arithmetic combination of two allowed numbers.
+    Checks: a * b, a + b, a - b (within 2% relative tolerance)."""
+    for a in allowed_floats:
+        for b in allowed_floats:
+            if a == 0 or b == 0:
+                continue
+            # Check multiplication: a * b
+            if abs(token_val - a * b) <= 0.02 * max(abs(token_val), abs(a * b)):
+                return True
+            # Check addition: a + b
+            if abs(token_val - (a + b)) <= 0.02 * max(abs(token_val), abs(a + b)):
+                return True
+            # Check subtraction: a - b
+            if abs(token_val - abs(a - b)) <= 0.02 * max(abs(token_val), abs(a - b)):
+                return True
+            # Check division: a / b
+            if b != 0:
+                if abs(token_val - a / b) <= 0.02 * max(abs(token_val), abs(a / b)):
+                    return True
+    return False
+
+
+def validate_reasoning(text: str, evidence_package: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate that model response doesn't invent KEY FINANCIAL numbers not in evidence.
+    Lenient validation: ignores dates, counts, IDs, small integers; only validates key financial figures."""
+    # Extract all numeric values from evidence as float (normalized)
+    evidence_text = json.dumps(evidence_package, default=str)
+    allowed_floats = set()
+    for token in _extract_numbers(evidence_text):
+        try:
+            val = float(token.replace(",", ""))
+            if _is_key_financial_number(token):
+                allowed_floats.add(round(val, 2))
+        except ValueError:
+            pass
+    
     invented = []
     for token in _extract_numbers(text):
-        if token not in allowed:
+        if not _is_key_financial_number(token):
+            continue
+        try:
+            token_val = round(float(token.replace(",", "")), 2)
+            # Check if close to any allowed value (within 2% or 0.5 absolute)
+            matches = any(abs(token_val - allowed) <= max(0.5, allowed * 0.02) for allowed in allowed_floats)
+            if not matches:
+                invented.append(token)
+        except ValueError:
             invented.append(token)
+    
     if invented:
         return {
             "ok": False,
             "invented_tokens": invented,
             "text": (
-                "Model explanation discarded because it introduced numbers "
-                f"not present in deterministic finance: {', '.join(invented[:8])}."
+                "Model explanation discarded because it introduced key financial numbers "
+                f"not present in evidence: {', '.join(invented[:8])}."
             ),
         }
     return {"ok": True, "invented_tokens": [], "text": text}
@@ -501,14 +679,96 @@ def reason_with_models(
     nvidia_client: Any = None,
 ) -> Dict[str, Any]:
     """Prefer Meterless when a real runtime is injected/available; else NVIDIA FPO adapter; else deterministic text."""
-    prompt = json.dumps(
-        {
-            "intent": evidence.get("intent"),
-            "finance": finance,
-            "warnings": evidence.get("warnings"),
-            "sources": evidence.get("sources"),
-        },
-        default=str,
+    # Build focused evidence package for the model - only essential data to avoid token bloat and validation issues
+    data = evidence.get("data") or {}
+    
+    # Extract only essential data for the model - avoid token bloat from raw data
+    # The finance section already contains computed values with all needed numbers
+    # Provide only summaries of raw data to avoid token bloat and validation issues
+    def _summarize_inventory(batches):
+        if not batches:
+            return "No inventory data available"
+        # Return summary: count, total kg, crops represented
+        total_kg = sum(float(b.get("net_available_kg") or 0) for b in batches)
+        crops = set(b.get("crop_name") for b in batches if b.get("crop_name"))
+        return f"{len(batches)} batches, {total_kg:,.1f} kg total, crops: {', '.join(sorted(crops))}"
+    
+    def _summarize_market(market_data):
+        if not market_data or market_data.get("status") != "success":
+            return "No market data available"
+        comps = market_data.get("market_comparison", [])
+        if not comps:
+            return "No market comparisons available"
+        # Return top 3 markets summary
+        top = comps[:3]
+        return "; ".join(f"{m['market_name']}: {m.get('avg_price', 'N/A')} INR/quintal" for m in top)
+    
+    def _summarize_transport(transport_data):
+        if not transport_data or transport_data.get("status") != "success":
+            return "No transport data available"
+        routes = transport_data.get("routes", [])
+        if not routes:
+            return "No routes available"
+        # Return cheapest 3 routes
+        cheapest = sorted(routes, key=lambda r: float(r.get("transport_cost_per_kg_inr") or 999))[:3]
+        return "; ".join(f"{r['origin_warehouse']}->{r['destination_market']}: {r.get('transport_cost_per_kg_inr', 'N/A')} INR/kg" for r in cheapest)
+    
+    # Build focused evidence package - ONLY provide summarized data and key numbers
+    # DO NOT include the full finance object - model should only use KEY_NUMBERS_TO_QUOTE
+    key_numbers = {}
+    f = finance
+    # Only provide FINAL computed values - NO intermediate numbers that could be used for calculations
+    key_numbers["quantity_kg_at_risk"] = f.get("quantity_kg_at_risk")
+    key_numbers["days_until_quality_window_end"] = f.get("days_until_quality_window_end")
+    key_numbers["spoilage_risk_level"] = f.get("spoilage_risk_level")
+    key_numbers["recommended_action"] = f.get("recommended_action")
+    if f.get("sell_now"):
+        key_numbers["sell_now_best_market"] = f["sell_now"].get("best_market")
+        # Only provide FINAL net values, NOT intermediate rates that could be multiplied
+        key_numbers["sell_now_estimated_net_inr"] = f["sell_now"].get("estimated_net_inr")
+        key_numbers["sell_now_net_per_kg_inr"] = f["sell_now"].get("net_per_kg_inr")
+        key_numbers["sell_now_transport_per_kg_inr"] = f["sell_now"].get("transport_per_kg_inr")
+    if f.get("hold_proxy"):
+        key_numbers["hold_proxy_local_market"] = f["hold_proxy"].get("local_market")
+        key_numbers["hold_proxy_estimated_net_inr"] = f["hold_proxy"].get("estimated_net_inr")
+        key_numbers["hold_proxy_gross_per_kg_inr"] = f["hold_proxy"].get("gross_per_kg_inr")
+    if f.get("price_spread_per_kg_inr") is not None:
+        key_numbers["price_spread_per_kg_inr"] = f.get("price_spread_per_kg_inr")
+    if f.get("cheapest_route"):
+        key_numbers["cheapest_route_origin"] = f["cheapest_route"].get("origin_warehouse")
+        key_numbers["cheapest_route_destination"] = f["cheapest_route"].get("destination_market")
+        key_numbers["cheapest_route_distance_km"] = f["cheapest_route"].get("distance_km")
+        key_numbers["cheapest_route_transport_cost_per_kg_inr"] = f["cheapest_route"].get("transport_cost_per_kg_inr")
+    
+    # Build focused evidence package - ONLY provide summarized data and key numbers
+    # DO NOT include the full finance object - model should only use KEY_NUMBERS_TO_QUOTE
+    evidence_package = {
+        "intent": evidence.get("intent"),
+        "crop": evidence.get("crop"),
+        "batch_code": evidence.get("batch_code"),
+        "warnings": evidence.get("warnings"),
+        "sources": evidence.get("sources"),
+        # Summarized data only - no raw bulk data
+        "inventory_summary": _summarize_inventory(
+            data.get("zetaris_inventory") or data.get("inventory", {}).get("items") or data.get("risks", {}).get("critical_batches")
+        ),
+        "market_summary": _summarize_market(data.get("market")),
+        "transport_summary": _summarize_transport(data.get("logistics")),
+        "weather_summary": "Weather data not available" if not data.get("weather") else "Weather data available",
+        "warehouse_summary": "Warehouse data not available" if not data.get("warehouse") else "Warehouse data available",
+        "KEY_NUMBERS_TO_QUOTE": key_numbers,
+    }
+    
+    # Add commonly needed derived numbers to prevent model from inventing them
+    # Build prompt with KEY_NUMBERS_TO_QUOTE at the top for model to see first
+    prompt = (
+        "KEY NUMBERS TO QUOTE DIRECTLY (do not calculate, just quote these exact values):\r\n"
+        + json.dumps(key_numbers, default=str)
+        + "\r\n\r\nFORBIDDEN: Do NOT perform any arithmetic, multiplication, division, addition, or subtraction on these numbers. "
+        "Do NOT compute totals, percentages, differences, or any derived values. "
+        "Quote ONLY the exact numbers from KEY_NUMBERS_TO_QUOTE below.\r\n\r\n"
+        "EVIDENCE PACKAGE:\r\n"
+        + json.dumps(evidence_package, default=str)
     )
     attempts: List[Dict[str, Any]] = []
 
@@ -518,7 +778,7 @@ def reason_with_models(
         except Exception as exc:
             attempts.append({"provider": name, "status": "error", "message": str(exc), "live": False})
             return None
-        checked = validate_reasoning(raw, finance)
+        checked = validate_reasoning(raw, evidence_package)
         attempts.append({
             "provider": name,
             "status": "ok" if checked["ok"] else "rejected_invented_numbers",
@@ -556,7 +816,7 @@ def reason_with_models(
     if meterless_client is None and (cfg.get("meterless_runtime_token") or "").strip() not in ("", "rt-local"):
         try:
             text = meterless_mod.chat_completion(prompt, cfg, system_prompt=REASONING_SYSTEM, model="meterless/deep")
-            checked = validate_reasoning(text, finance)
+            checked = validate_reasoning(text, evidence_package)
             attempts.append({"provider": "meterless", "status": "ok" if checked["ok"] else "rejected", "live": True})
             if checked["ok"]:
                 return {"provider": "meterless", "live": True, "text": checked["text"], "validation": checked, "attempts": attempts}
@@ -566,7 +826,7 @@ def reason_with_models(
     if nvidia_client is None and (cfg.get("nvidia_api_key") or "").strip():
         try:
             text = nvidia_mod.chat_completion(prompt, cfg, system_prompt=REASONING_SYSTEM)
-            checked = validate_reasoning(text, finance)
+            checked = validate_reasoning(text, evidence_package)
             attempts.append({"provider": "nvidia_nim", "status": "ok" if checked["ok"] else "rejected", "live": True})
             if checked["ok"]:
                 return {"provider": "nvidia_nim", "live": True, "text": checked["text"], "validation": checked, "attempts": attempts}
@@ -611,6 +871,24 @@ def run_pipeline(
         context=context_summary,
     )
     finance = calculate_finance(evidence)
+    # Ensure finance is always a valid dict with expected structure
+    if not finance or not isinstance(finance, dict):
+        finance = {
+            "crop": evidence.get("crop"),
+            "quantity_kg_at_risk": 0,
+            "markets_ranked": [],
+            "cheapest_route": None,
+            "sell_now": None,
+            "hold_proxy": None,
+            "price_spread_per_kg_inr": None,
+            "days_until_quality_window_end": None,
+            "spoilage_risk_level": None,
+            "sales_comparables": [],
+            "recommended_action": "insufficient_data",
+            "calculation_notes": [],
+            "warnings": ["No financial data available"],
+            "calculated_at": _now_iso(),
+        }
     reasoning = reason_with_models(
         evidence,
         finance,
