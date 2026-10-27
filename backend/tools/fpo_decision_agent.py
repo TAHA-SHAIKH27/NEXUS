@@ -20,15 +20,16 @@ from backend.tools import fpo_analytics
 from backend.tools import meterless as meterless_mod
 from backend.tools import nvidia_nemotron as nvidia_mod
 from backend.tools import zetaris as zetaris_mod
-from backend.agent.agri_context import (
-    AgriContext,
-    agri_context_store,
-    get_or_create_context,
-    extract_batch_codes_from_evidence,
-    extract_batch_ids_from_evidence,
-    extract_markets_from_finance,
-    extract_origin_locations,
-    build_context_summary,
+from backend.tools.agri_context import (
+    AgriConversation,
+    AgriContextStore,
+    AgriTurn,
+    build_turn_from_pipeline,
+    create_conversation_id,
+    extract_batch_info_from_evidence,
+    get_context_for_prompt,
+    get_context_store,
+    resolve_followup_entities,
 )
 
 INR_Q = Decimal("0.01")
@@ -77,43 +78,43 @@ def _kg(value: Optional[Decimal]) -> Optional[float]:
     return float(value.quantize(KG_Q, rounding=ROUND_HALF_UP))
 
 
-def classify_intent(prompt: str, context: Optional[AgriContext] = None) -> str:
-    """Classify intent, using conversation context for follow-up detection."""
+def classify_intent(prompt: str, context: Optional[Dict[str, Any]] = None) -> str:
     p = (prompt or "").lower()
-    
-    # Direct intent patterns (explicit new queries) - ORDER MATTERS: more specific first
-    if any(k in p for k in ("net profit", "net margin", "net revenue", "compare profit", "profit comparison")):
-        return INTENT_NET_PROFIT
+
+    # First, check for explicit intent keywords (these override context)
     if any(k in p for k in ("hold vs sell", "hold versus sell", "hold or sell", "should we sell", "should we hold")):
         return INTENT_HOLD_VS_SELL
+    if any(k in p for k in ("net profit", "net margin", "net revenue", "compare profit", "profit comparison")):
+        return INTENT_NET_PROFIT
     if any(k in p for k in ("which market", "which mandi", "market selection", "best market", "arbitrage")):
         return INTENT_MARKET_SELECTION
-    if any(k in p for k in ("spoilage", "quality window", "perish", "shelf life", "expire", "high risk", "critical", "risk")):
+    if any(k in p for k in ("spoilage", "quality window", "perish", "shelf life", "expire", "risk", "critical", "high risk")):
         return INTENT_SPOILAGE
-    # Inventory/quantity queries should be checked BEFORE storage/transport
+    # Inventory/quantity queries
     if any(k in p for k in ("show", "list", "inventory", "quantity", "available", "stock", "how many", "tons", "tonnes", "available stock", "available quantity", "quantity available", "batch", "batches")):
         return INTENT_INVENTORY
     if any(k in p for k in ("storage", "warehouse", "transport", "logistics", "freight")):
         return INTENT_STORAGE_TRANSPORT
     if any(k in p for k in ("batch", "recommend", "recommendation", "scn-a", "scn-b", "scn-c", "scn-d", "scn-e", "simulate")):
         return INTENT_BATCH
-    
-    # Follow-up detection: if we have context and this looks like a continuation
-    if context and context.intent:
-        followup_patterns = [
-            r"\b(so|then|where should|where to|what about|how about)\b.*\b(sell|dispatch|market)\b",
-            r"\b(sell them|dispatch them|market for them)\b",
-            r"\b(compare|versus|vs\.?)\b.*\b(market|price|store|hold)\b",
-            r"\b(what if|suppose|if we)\b.*\b(store|hold|sell|keep)\b",
-            r"\b(best|which|where)\b.*\b(market|mandi|buyer)\b",
-            r"\b(recommend|suggestion|advice)\b",
-            r"\bcompare\b.*\b(market|them)\b",
-        ]
-        for pattern in followup_patterns:
-            if re.search(pattern, p, re.I):
-                # Return the previous intent for follow-up queries
-                return context.intent
-    
+    if any(k in p for k in ("overview", "summary", "stats", "kpi", "how many", "total")):
+        return "overview"
+
+    # Only check for follow-up context if no explicit intent was found
+    if context and context.get("is_followup"):
+        prev_intent = context.get("previous_intent")
+        # Follow-ups about selling/dispatching inherit the previous intent
+        if any(k in p for k in ("where should i sell", "where to sell", "sell them", "dispatch them")):
+            if prev_intent in (INTENT_HOLD_VS_SELL, INTENT_MARKET_SELECTION, INTENT_NET_PROFIT, INTENT_SPOILAGE):
+                return prev_intent
+        # Follow-ups about comparing inherit the comparison intent
+        if "compare" in p or "what about" in p:
+            if prev_intent in (INTENT_HOLD_VS_SELL, INTENT_MARKET_SELECTION, INTENT_NET_PROFIT, INTENT_SPOILAGE):
+                return prev_intent
+        # Follow-ups asking "which market" with context
+        if "which market" in p and prev_intent in (INTENT_HOLD_VS_SELL, INTENT_MARKET_SELECTION, INTENT_NET_PROFIT, INTENT_SPOILAGE):
+            return prev_intent
+
     return INTENT_GENERAL
 
 
@@ -152,13 +153,10 @@ def retrieve_evidence(
     analytics: Any = fpo_analytics,
     zetaris_client: Any = None,
     config: Optional[Dict[str, Any]] = None,
-    context: Optional[AgriContext] = None,
+    context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    # Use context for intent classification (follow-up detection)
     intent = intent or classify_intent(prompt, context)
-    
-    # Use context crop if not explicitly mentioned in prompt
-    crop = extract_crop(prompt) or (context.crop if context else None) or "Tomato"
+    crop = extract_crop(prompt)
     batch_code = extract_batch_code(prompt)
     warnings: List[str] = []
     sources: List[Dict[str, Any]] = []
@@ -167,17 +165,11 @@ def retrieve_evidence(
         "batch_code": batch_code,
         "intent": intent,
     }
-    
-    # Include context in payload for downstream use
-    if context:
-        payload["context"] = {
-            "conversation_id": context.conversation_id,
-            "batch_codes": context.batch_codes,
-            "batch_ids": context.batch_ids,
-            "candidate_markets": context.candidate_markets,
-            "origin_locations": context.origin_locations,
-            "risk_level": context.risk_level,
-        }
+
+    # Apply follow-up context resolution
+    if context and context.get("is_followup"):
+        payload = resolve_followup_entities(prompt, context, payload)
+        crop = payload.get("crop") or crop
 
     # Use NL-to-SQL planner for Zetaris queries when client is available
     zetaris_results = []
@@ -186,6 +178,11 @@ def retrieve_evidence(
             from backend.tools import nl_to_sql
             # Parse intent and create query plan
             nl_intent = nl_to_sql.parse_natural_language(prompt)
+            # Override with context-resolved crop
+            if crop:
+                nl_intent.crop = crop
+            if batch_code:
+                nl_intent.batch_code = batch_code
             plan = nl_to_sql.create_query_plan(nl_intent)
             executor = nl_to_sql.QueryExecutor(config)
             executor._client = zetaris_client  # Use the provided client
@@ -304,11 +301,11 @@ def calculate_finance(evidence: Dict[str, Any]) -> Dict[str, Any]:
     data = evidence.get("data") or {}
     crop = evidence.get("crop")
     warnings = list(evidence.get("warnings") or [])
-    
+
     # Check for Zetaris inventory data first
     zetaris_inventory = data.get("zetaris_inventory") or []
     zetaris_data = data.get("zetaris_data") or []
-    
+
     market = data.get("market") or {}
     logistics = data.get("logistics") or {}
     risks = data.get("risks") or {}
@@ -325,7 +322,7 @@ def calculate_finance(evidence: Dict[str, Any]) -> Dict[str, Any]:
     # Use Zetaris inventory data if available, otherwise fall back to PostgreSQL risks
     qty = Decimal("0")
     critical = []
-    
+
     if zetaris_inventory:
         # Use Zetaris inventory data
         for batch in zetaris_inventory:
@@ -592,23 +589,13 @@ def run_pipeline(
     nvidia_client: Any = None,
     conversation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    # Get or create agricultural conversation context
-    context = get_or_create_context(conversation_id)
-    
-    # Classify intent with context (handles follow-ups)
-    intent = classify_intent(prompt, context)
-    
-    # Update context with new intent
-    if intent != INTENT_GENERAL:
-        agri_context_store.set_intent(context.conversation_id, intent)
-        context.intent = intent
-    
-    # Extract and update crop in context
-    crop = extract_crop(prompt)
-    if crop:
-        agri_context_store.set_crop(context.conversation_id, crop)
-        context.crop = crop
-    
+    # Get or create conversation context
+    store = get_context_store()
+    if not conversation_id:
+        conversation_id = create_conversation_id()
+    context_summary = get_context_for_prompt(conversation_id, prompt)
+
+    intent = classify_intent(prompt, context_summary)
     stages = ["intent", "evidence", "finance", "reasoning", "validation", "recommendation"]
     evidence = retrieve_evidence(
         prompt,
@@ -616,32 +603,9 @@ def run_pipeline(
         analytics=analytics,
         zetaris_client=zetaris_client,
         config=config,
-        context=context,
+        context=context_summary,
     )
-    
-    # Update context with evidence-derived data
-    batch_codes = extract_batch_codes_from_evidence(evidence)
-    if batch_codes:
-        agri_context_store.append_batch_codes(context.conversation_id, batch_codes)
-    
-    batch_ids = extract_batch_ids_from_evidence(evidence)
-    if batch_ids:
-        agri_context_store.append_batch_ids(context.conversation_id, batch_ids)
-    
-    origin_locations = extract_origin_locations(evidence)
-    if origin_locations:
-        agri_context_store.set_origin_locations(context.conversation_id, origin_locations)
-    
     finance = calculate_finance(evidence)
-    
-    # Update context with finance results
-    markets = extract_markets_from_finance(finance)
-    if markets:
-        agri_context_store.set_candidate_markets(context.conversation_id, markets)
-    
-    if finance.get("spoilage_risk_level"):
-        agri_context_store.set_risk_level(context.conversation_id, finance["spoilage_risk_level"])
-    
     reasoning = reason_with_models(
         evidence,
         finance,
@@ -649,7 +613,6 @@ def run_pipeline(
         meterless_client=meterless_client,
         nvidia_client=nvidia_client,
     )
-    
     recommendation = {
         "action": finance.get("recommended_action"),
         "crop": finance.get("crop"),
@@ -668,20 +631,24 @@ def run_pipeline(
         },
         "notes": finance.get("calculation_notes"),
     }
-    
-    # Update context with recommendation
-    agri_context_store.set_recommendation(context.conversation_id, recommendation)
-    agri_context_store.set_finance(context.conversation_id, finance)
-    agri_context_store.set_evidence(context.conversation_id, evidence.get("sources", []))
-    
     live = bool(reasoning.get("live"))
     speak = reasoning.get("text") or "Decision computed from retrieved evidence."
+
+    # Build turn and store in conversation context
+    turn = build_turn_from_pipeline(prompt, {
+        "intent": intent,
+        "evidence": evidence,
+        "finance": finance,
+        "recommendation": recommendation,
+    }, conversation_id)
+    store.add_turn(conversation_id, turn)
+
     return {
         "status": "success",
         "live_model": live,
         "provider": reasoning.get("provider"),
         "intent": intent,
-        "conversation_id": context.conversation_id,
+        "conversation_id": conversation_id,
         "stages": stages,
         "evidence": {
             "sources": evidence.get("sources"),
@@ -705,7 +672,7 @@ def run_pipeline(
         },
         "logs": [
             f"INTENT: {intent}",
-            f"CONVERSATION: {context.conversation_id[:8]}",
+            f"CONVERSATION: {conversation_id[:8]}",
             f"SOURCES: {len(evidence.get('sources') or [])}",
             f"ACTION: {recommendation.get('action')}",
             f"REASONING_PROVIDER: {reasoning.get('provider')} live={live}",
@@ -746,9 +713,9 @@ def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = 
     p = (prompt or "").lower()
     if not any(h in p for h in _DECISION_HINTS):
         return None
-    
+
     cfg = config or {}
-    
+
     # Create Meterless client if token is configured
     meterless_client = None
     try:
@@ -759,7 +726,7 @@ def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = 
             meterless_client = meterless_mod.MeterlessClient(meterless_cfg)
     except Exception:
         pass
-    
+
     # Create NVIDIA client if API key is configured
     nvidia_client = None
     try:
@@ -769,7 +736,7 @@ def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = 
             nvidia_client = nvidia_mod.NvidiaNemotronClient(nvidia_cfg)
     except Exception:
         pass
-    
+
     # Create Zetaris client if configured
     zetaris_client = None
     try:
@@ -779,9 +746,9 @@ def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = 
             zetaris_client = zclient
     except Exception:
         pass
-    
+
     result = run_pipeline(
-        prompt, 
+        prompt,
         config=cfg,
         zetaris_client=zetaris_client,
         meterless_client=meterless_client,

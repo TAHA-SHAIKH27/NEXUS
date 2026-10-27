@@ -74,6 +74,7 @@ from backend.tools import live_market_prices
 from backend.tools import routing
 from backend.tools import weather
 from backend.tools import fpo_decision_agent
+from backend.tools import agri_context
 
 app = FastAPI(title="N.E.X.U.S. Core", description="API Service for Windows OS Automation")
 
@@ -347,6 +348,10 @@ class ConfigModel(BaseModel):
     zetaris_default_limit: Optional[int] = 100
     zetaris_max_limit: Optional[int] = 100
     zetaris_timeout_seconds: Optional[int] = 30
+    # External API keys
+    openrouteservice_api_key: Optional[str] = ""
+    datagov_api_key: Optional[str] = ""
+    market_price_timeout: Optional[int] = 30
 
 # ── Code Core request models ────────────────────────────────────────────────
 class CodePreviewFixRequest(BaseModel):
@@ -395,7 +400,8 @@ def get_config():
     # Mask secrets in response
     masked = dict(cfg)
     for key in ("gemini_api_key", "huggingface_api_key", "groq_api_key", "nvidia_api_key",
-                "meterless_runtime_token", "zetaris_api_key", "zetaris_password"):
+                "meterless_runtime_token", "zetaris_api_key", "zetaris_password",
+                "openrouteservice_api_key", "datagov_api_key"):
         if masked.get(key):
             masked[key] = "********"
     return masked
@@ -428,6 +434,9 @@ def post_config(req: ConfigModel):
         "zetaris_default_limit": req.zetaris_default_limit or 100,
         "zetaris_max_limit": req.zetaris_max_limit or 100,
         "zetaris_timeout_seconds": req.zetaris_timeout_seconds or 30,
+        "openrouteservice_api_key": req.openrouteservice_api_key or "",
+        "datagov_api_key": req.datagov_api_key or "",
+        "market_price_timeout": req.market_price_timeout or 30,
     })
     save_config(cfg)
     return {"status": "success", "message": "Configuration saved."}
@@ -1732,9 +1741,9 @@ def process_command(req: CommandRequest):
                 phase1_memory.clear()
             phase1_runtime.runtime.conversation.clear()
             # Also clear agricultural conversation context
-            from backend.agent.agri_context import agri_context_store
+            from backend.tools.agri_context import get_context_store
             conv_id = _get_agri_conversation_id(req.apiKey)
-            agri_context_store.delete(conv_id)
+            get_context_store().clear(conv_id)
         except Exception:
             pass
         return {

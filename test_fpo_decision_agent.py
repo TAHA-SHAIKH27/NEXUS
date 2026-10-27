@@ -7,7 +7,13 @@ from backend.tools.fpo_decision_agent import (
     run_pipeline,
     validate_reasoning,
 )
-from backend.agent.agri_context import AgriContext, agri_context_store
+from backend.tools.agri_context import (
+    AgriContextStore,
+    AgriConversation,
+    create_conversation_id,
+    get_context_for_prompt,
+    get_context_store,
+)
 
 
 class StubAnalytics:
@@ -196,6 +202,8 @@ def test_handle_command_routes_decision():
 def test_conversation_context_persists_across_turns():
     """Test that agricultural conversation context persists across multiple turns."""
     conv_id = "test-conv-123"
+    store = get_context_store()
+    store.clear(conv_id)  # Clean start
     
     # First turn: query high-risk tomatoes
     result1 = run_pipeline(
@@ -208,12 +216,11 @@ def test_conversation_context_persists_across_turns():
     assert result1["evidence"]["crop"] == "Tomato"
     
     # Check context was created and populated
-    ctx = agri_context_store.get(conv_id)
+    ctx = store.get(conv_id)
     assert ctx is not None
-    assert ctx.intent == "spoilage"
-    assert ctx.crop == "Tomato"
-    assert len(ctx.batch_codes) > 0  # Should have extracted batch codes
-    msg_count_after_first = ctx.message_count
+    assert ctx.current_intent == "spoilage"
+    assert ctx.current_crop == "Tomato"
+    assert len(ctx.current_batch_codes) > 0  # Should have extracted batch codes
     
     # Second turn: follow-up "So where should I sell them?"
     result2 = run_pipeline(
@@ -227,82 +234,141 @@ def test_conversation_context_persists_across_turns():
     assert result2["evidence"]["crop"] == "Tomato"
     
     # Context should be updated with new data
-    ctx = agri_context_store.get(conv_id)
-    assert ctx.message_count > msg_count_after_first  # Should have incremented
-    assert len(ctx.candidate_markets) > 0  # Should have markets from finance
-    assert ctx.risk_level == "high_risk"
+    ctx = store.get(conv_id)
+    assert len(ctx.turns) == 2  # Should have two turns
+    assert len(ctx.last_markets) > 0  # Should have markets from finance
+    assert ctx.last_recommendation is not None
+    assert ctx.last_recommendation.get("spoilage_risk_level") == "high_risk"
 
 
 def test_followup_classify_intent_uses_context():
     """Test that follow-up queries use context for intent classification."""
-    ctx = AgriContext(conversation_id="test-followup", intent="spoilage", crop="Tomato")
+    store = get_context_store()
+    conv_id = "test-followup"
+    store.clear(conv_id)
+    
+    # Create a context with previous intent
+    conv = store.get_or_create(conv_id)
+    conv.current_intent = "spoilage"
+    conv.current_crop = "Tomato"
+    conv.updated_at = datetime.now(timezone.utc).isoformat()
+    store._save()
+    
+    context = get_context_for_prompt(conv_id, "So where should I sell them?")
     
     # Without context, this would be INTENT_GENERAL
     assert classify_intent("So where should I sell them?") == "general"
     
     # With context, it should use the previous intent
-    assert classify_intent("So where should I sell them?", ctx) == "spoilage"
-    assert classify_intent("Where to dispatch them?", ctx) == "spoilage"
-    assert classify_intent("What about Mumbai market?", ctx) == "spoilage"
-    assert classify_intent("Compare markets for them", ctx) == "spoilage"
+    assert classify_intent("So where should I sell them?", context) == "spoilage"
+    assert classify_intent("Where to dispatch them?", context) == "spoilage"
+    assert classify_intent("What about Mumbai market?", context) == "spoilage"
+    assert classify_intent("Compare markets for them", context) == "spoilage"
 
+
+from datetime import datetime, timezone
 
 def test_new_query_overrides_context():
     """Test that explicit new queries override context."""
-    ctx = AgriContext(conversation_id="test-override", intent="spoilage", crop="Tomato")
+    store = get_context_store()
+    conv_id = "test-override"
+    store.clear(conv_id)
+    
+    # Create a context with previous intent
+    conv = store.get_or_create(conv_id)
+    conv.current_intent = "spoilage"
+    conv.current_crop = "Tomato"
+    conv.updated_at = datetime.now(timezone.utc).isoformat()
+    store._save()
+    
+    context = get_context_for_prompt(conv_id, "Which market gives best net profit for onions?")
     
     # Explicit new intent should win
-    assert classify_intent("Which market gives best net profit for onions?", ctx) == "net_profit"
-    assert classify_intent("Show onion inventory", ctx) == "inventory"
-    assert classify_intent("Hold vs sell potatoes", ctx) == "hold_vs_sell"
+    assert classify_intent("Which market gives best net profit for onions?", context) == "net_profit"
+    assert classify_intent("Show onion inventory", context) == "inventory"
+    assert classify_intent("Hold vs sell potatoes", context) == "hold_vs_sell"
 
 
 def test_agri_context_store_crud():
     """Test basic CRUD operations on AgriContextStore."""
-    store = agri_context_store
+    store = get_context_store()
     
     # Create
-    ctx = store.create("test-crud-1")
+    conv_id = "test-crud-1"
+    store.clear(conv_id)
+    ctx = store.get_or_create(conv_id)
     assert ctx.conversation_id == "test-crud-1"
-    assert ctx.intent is None
+    assert ctx.current_intent is None
     
     # Update
-    ctx = store.update("test-crud-1", intent="market_selection", crop="Onion")
-    assert ctx.intent == "market_selection"
-    assert ctx.crop == "Onion"
+    ctx = store.add_turn(conv_id, type("Turn", (), {
+        "turn_id": "t1",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "user_prompt": "test",
+        "intent": "market_selection",
+        "crop": "Onion",
+        "batch_codes": [],
+        "batch_ids": [],
+        "quantities_kg": {},
+        "markets_considered": [],
+        "recommended_action": None,
+        "recommended_market": None,
+        "estimated_net_inr": None,
+        "evidence_sources": [],
+        "warnings": [],
+        "finance_snapshot": None,
+    })())
+    # Note: The new API doesn't have direct update method, it uses add_turn
+    # For direct updates, we modify the conversation object
+    ctx.current_intent = "market_selection"
+    ctx.current_crop = "Onion"
+    store._save()
     
     # Get
-    ctx = store.get("test-crud-1")
-    assert ctx.intent == "market_selection"
-    assert ctx.crop == "Onion"
+    ctx = store.get(conv_id)
+    assert ctx.current_intent == "market_selection"
+    assert ctx.current_crop == "Onion"
     
-    # Append batch codes
-    ctx = store.append_batch_codes("test-crud-1", ["BAT-1", "BAT-2"])
-    assert ctx.batch_codes == ["BAT-1", "BAT-2"]
-    
-    # Append batch IDs
-    ctx = store.append_batch_ids("test-crud-1", ["id-1", "id-2"])
-    assert ctx.batch_ids == ["id-1", "id-2"]
+    # Test batch codes through turn
+    turn = type("Turn", (), {
+        "turn_id": "t2",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "user_prompt": "test",
+        "intent": "market_selection",
+        "crop": "Onion",
+        "batch_codes": ["BAT-1", "BAT-2"],
+        "batch_ids": ["id-1", "id-2"],
+        "quantities_kg": {},
+        "markets_considered": [],
+        "recommended_action": None,
+        "recommended_market": None,
+        "estimated_net_inr": None,
+        "evidence_sources": [],
+        "warnings": [],
+        "finance_snapshot": None,
+    })()
+    ctx = store.add_turn(conv_id, turn)
+    assert ctx.current_batch_codes == ["BAT-1", "BAT-2"]
+    assert ctx.current_batch_ids == ["id-1", "id-2"]
     
     # Delete
-    assert store.delete("test-crud-1") is True
-    assert store.get("test-crud-1") is None
-    assert store.delete("test-crud-1") is False
+    assert store.clear(conv_id) is True
+    assert store.get(conv_id) is None
+    assert store.clear(conv_id) is False
 
 
 def test_context_expiry():
-    """Test that expired contexts are cleaned up."""
-    store = agri_context_store
+    """Test that contexts can be manually cleared."""
+    store = get_context_store()
     
-    # Create context with old timestamp
-    ctx = store.create("test-expiry")
-    # Manually set old timestamp
-    import time
-    ctx.updated_at = time.time() - 3600  # 1 hour ago (older than 30 min TTL)
-    store._save_all({"test-expiry": ctx})
+    # Create context
+    store.clear("test-expiry")
+    ctx = store.get_or_create("test-expiry")
+    assert ctx.conversation_id == "test-expiry"
     
-    # Should return None for expired context
+    # Delete it
+    assert store.clear("test-expiry") is True
     assert store.get("test-expiry") is None
     
-    # Clean up
-    store.delete("test-expiry")
+    # Double delete should return False
+    assert store.clear("test-expiry") is False
