@@ -71,6 +71,7 @@ jarvis_tasks.db*
 backend/data/session_memory.json
 backend/data/current_session_memory.json
 backend/data/conversation_context.json
+backend/data/agri_conversation_context.json
 backend/data/persistent_memory.json
 backend/data/last_audit.json
 
