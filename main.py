@@ -399,12 +399,15 @@ def get_config():
     cfg = load_config()
     # Mask secrets in response
     masked = dict(cfg)
+    secrets_configured = {}
     for key in ("gemini_api_key", "huggingface_api_key", "groq_api_key", "nvidia_api_key",
                 "meterless_runtime_token", "zetaris_api_key", "zetaris_password",
                 "openrouteservice_api_key", "datagov_api_key"):
-        if masked.get(key):
+        val = masked.get(key)
+        secrets_configured[key] = bool(val and val != "********")
+        if val:
             masked[key] = "********"
-    return masked
+    return {**masked, "secrets_configured": secrets_configured}
 
 
 @app.post("/api/config")
@@ -461,7 +464,14 @@ def post_config(req: ConfigModel):
     
     cfg.update(updates)
     save_config(cfg)
-    return {"status": "success", "message": "Configuration saved."}
+    # Return updated secrets_configured for frontend state sync
+    secrets_configured = {}
+    for key in ("gemini_api_key", "huggingface_api_key", "groq_api_key", "nvidia_api_key",
+                "meterless_runtime_token", "zetaris_api_key", "zetaris_password",
+                "openrouteservice_api_key", "datagov_api_key"):
+        val = cfg.get(key)
+        secrets_configured[key] = bool(val and val != "********")
+    return {"status": "success", "message": "Configuration saved.", "secrets_configured": secrets_configured}
 
 
 # ── Meterless & NVIDIA Provider Status Endpoints ───────────────────────────────
@@ -472,20 +482,28 @@ class ProviderStatusRequest(BaseModel):
 
 @app.post("/api/meterless/status")
 def meterless_status(req: ProviderStatusRequest):
-    """Check Meterless Runtime (Nightshift) connectivity and model availability."""
+    """Check Meterless Runtime (Nightshift) connectivity and model availability.
+    
+    Always loads configuration from file to get real credentials. 
+    Ignores any masked placeholders in the request payload."""
     try:
         from backend.tools.meterless import get_status
-        return get_status(req.config or load_config())
+        # Always use loaded config for secrets; ignore any masked placeholders from request
+        return get_status(load_config())
     except Exception as e:
         return {"provider": "meterless", "status": "error", "message": str(e), "live": False}
 
 
 @app.post("/api/nvidia/status")
 def nvidia_status(req: ProviderStatusRequest):
-    """Check NVIDIA NIM Nemotron (FPO adapter) connectivity and model catalog."""
+    """Check NVIDIA NIM Nemotron (FPO adapter) connectivity and model catalog.
+    
+    Always loads configuration from file to get real credentials.
+    Ignores any masked placeholders in the request payload."""
     try:
         from backend.tools.nvidia_nemotron import get_status
-        return get_status(req.config or load_config())
+        # Always use loaded config for secrets; ignore any masked placeholders from request
+        return get_status(load_config())
     except Exception as e:
         return {"provider": "nvidia_nim", "status": "error", "message": str(e), "live": False}
 

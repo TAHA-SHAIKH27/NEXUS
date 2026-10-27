@@ -26,6 +26,7 @@ import {
 export default function SettingsPage() {
   const [config, setConfig] = useState({});
   const [savedConfig, setSavedConfig] = useState({});
+  const [secretsConfigured, setSecretsConfigured] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
@@ -50,6 +51,18 @@ export default function SettingsPage() {
         setConfig(json);
         // Store a copy for display purposes (with masked secrets)
         setSavedConfig(json);
+        // Track which secrets are actually configured (non-empty and not masked)
+        const secretKeys = [
+          'gemini_api_key', 'huggingface_api_key', 'groq_api_key', 'nvidia_api_key',
+          'meterless_runtime_token', 'zetaris_api_key', 'zetaris_password',
+          'openrouteservice_api_key', 'datagov_api_key'
+        ];
+        const configured = {};
+        secretKeys.forEach(key => {
+          const val = json[key];
+          configured[key] = val && val !== '********' && val !== '';
+        });
+        setSecretsConfigured(configured);
       }
     } catch (e) {
       console.error(e);
@@ -116,10 +129,11 @@ export default function SettingsPage() {
   const checkMeterlessStatus = async () => {
     setCheckingMeterless(true);
     try {
+      // Don't send config - let backend use its stored config
       const res = await fetch('/api/meterless/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config })
+        body: JSON.stringify({})
       });
       if (res.ok) {
         const json = await res.json();
@@ -135,10 +149,11 @@ export default function SettingsPage() {
   const checkNvidiaStatus = async () => {
     setCheckingNvidia(true);
     try {
+      // Don't send config - let backend use its stored config
       const res = await fetch('/api/nvidia/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ config })
+        body: JSON.stringify({})
       });
       if (res.ok) {
         const json = await res.json();
@@ -240,13 +255,33 @@ export default function SettingsPage() {
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-faint)', marginBottom: '0.35rem' }}>
                 Zetaris Password
               </label>
-              <input
-                type={showKeys ? 'text' : 'password'}
-                value={config.zetaris_password || ''}
-                onChange={(e) => handleChange('zetaris_password', e.target.value)}
-                className="agri-input"
-                style={{ width: '100%' }}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showKeys ? 'text' : 'password'}
+                  value={config.zetaris_password && config.zetaris_password !== '********' 
+                    ? config.zetaris_password 
+                    : ''}
+                  onChange={(e) => handleChange('zetaris_password', e.target.value)}
+                  className="agri-input"
+                  style={{ width: '100%', paddingRight: '90px' }}
+                />
+                {secretsConfigured.zetaris_password && config.zetaris_password === '********' && (
+                  <span style={{ 
+                    position: 'absolute', 
+                    right: '10px', 
+                    top: '50%', 
+                    transform: 'translateY(-50%)',
+                    fontSize: '0.65rem',
+                    color: '#34d399',
+                    background: 'rgba(52, 211, 153, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(52, 211, 153, 0.3)'
+                  }}>
+                    Configured
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>
@@ -295,14 +330,34 @@ export default function SettingsPage() {
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-faint)', marginBottom: '0.35rem' }}>
                 Runtime Token (from Nightshift stateDir/proxy-token)
               </label>
-              <input
-                type={showKeys ? 'text' : 'password'}
-                value={config.meterless_runtime_token || (savedConfig.meterless_runtime_token ? '••••••••' : '')}
-                onChange={(e) => handleChange('meterless_runtime_token', e.target.value)}
-                className="agri-input"
-                style={{ width: '100%' }}
-                placeholder="Paste proxy-token here"
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showKeys ? 'text' : 'password'}
+                  value={config.meterless_runtime_token && config.meterless_runtime_token !== '********' 
+                    ? config.meterless_runtime_token 
+                    : ''}
+                  onChange={(e) => handleChange('meterless_runtime_token', e.target.value)}
+                  className="agri-input"
+                  style={{ width: '100%', paddingRight: '90px' }}
+                  placeholder="Paste proxy-token here"
+                />
+                {secretsConfigured.meterless_runtime_token && config.meterless_runtime_token === '********' && (
+                  <span style={{ 
+                    position: 'absolute', 
+                    right: '10px', 
+                    top: '50%', 
+                    transform: 'translateY(-50%)',
+                    fontSize: '0.65rem',
+                    color: '#34d399',
+                    background: 'rgba(52, 211, 153, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(52, 211, 153, 0.3)'
+                  }}>
+                    Configured
+                  </span>
+                )}
+              </div>
               <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginTop: '0.25rem' }}>
                 Placeholder <code>rt-local</code> is rejected. Get token from Nightshift runtime directory.
               </p>
@@ -384,14 +439,34 @@ export default function SettingsPage() {
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-faint)', marginBottom: '0.35rem' }}>
                 NVIDIA API Key (NIM)
               </label>
-              <input
-                type={showKeys ? 'text' : 'password'}
-                value={config.nvidia_api_key || ''}
-                onChange={(e) => handleChange('nvidia_api_key', e.target.value)}
-                className="agri-input"
-                style={{ width: '100%' }}
-                placeholder="nvapi-..."
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showKeys ? 'text' : 'password'}
+                  value={config.nvidia_api_key && config.nvidia_api_key !== '********' 
+                    ? config.nvidia_api_key 
+                    : ''}
+                  onChange={(e) => handleChange('nvidia_api_key', e.target.value)}
+                  className="agri-input"
+                  style={{ width: '100%', paddingRight: '90px' }}
+                  placeholder="nvapi-..."
+                />
+                {secretsConfigured.nvidia_api_key && config.nvidia_api_key === '********' && (
+                  <span style={{ 
+                    position: 'absolute', 
+                    right: '10px', 
+                    top: '50%', 
+                    transform: 'translateY(-50%)',
+                    fontSize: '0.65rem',
+                    color: '#34d399',
+                    background: 'rgba(52, 211, 153, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(52, 211, 153, 0.3)'
+                  }}>
+                    Configured
+                  </span>
+                )}
+              </div>
               <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginTop: '0.25rem' }}>
                 Separate from Code Core&apos;s nvidia_model (z-ai/glm-5.3-flash). FPO uses Nemotron models.
               </p>
@@ -486,26 +561,66 @@ export default function SettingsPage() {
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-faint)', marginBottom: '0.35rem' }}>
                 Google Gemini API Key
               </label>
-              <input
-                type={showKeys ? 'text' : 'password'}
-                value={config.gemini_api_key || ''}
-                onChange={(e) => handleChange('gemini_api_key', e.target.value)}
-                className="agri-input"
-                style={{ width: '100%' }}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showKeys ? 'text' : 'password'}
+                  value={config.gemini_api_key && config.gemini_api_key !== '********' 
+                    ? config.gemini_api_key 
+                    : ''}
+                  onChange={(e) => handleChange('gemini_api_key', e.target.value)}
+                  className="agri-input"
+                  style={{ width: '100%', paddingRight: '90px' }}
+                />
+                {secretsConfigured.gemini_api_key && config.gemini_api_key === '********' && (
+                  <span style={{ 
+                    position: 'absolute', 
+                    right: '10px', 
+                    top: '50%', 
+                    transform: 'translateY(-50%)',
+                    fontSize: '0.65rem',
+                    color: '#34d399',
+                    background: 'rgba(52, 211, 153, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(52, 211, 153, 0.3)'
+                  }}>
+                    Configured
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-faint)', marginBottom: '0.35rem' }}>
                 Groq API Key
               </label>
-              <input
-                type={showKeys ? 'text' : 'password'}
-                value={config.groq_api_key || ''}
-                onChange={(e) => handleChange('groq_api_key', e.target.value)}
-                className="agri-input"
-                style={{ width: '100%' }}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showKeys ? 'text' : 'password'}
+                  value={config.groq_api_key && config.groq_api_key !== '********' 
+                    ? config.groq_api_key 
+                    : ''}
+                  onChange={(e) => handleChange('groq_api_key', e.target.value)}
+                  className="agri-input"
+                  style={{ width: '100%', paddingRight: '90px' }}
+                />
+                {secretsConfigured.groq_api_key && config.groq_api_key === '********' && (
+                  <span style={{ 
+                    position: 'absolute', 
+                    right: '10px', 
+                    top: '50%', 
+                    transform: 'translateY(-50%)',
+                    fontSize: '0.65rem',
+                    color: '#34d399',
+                    background: 'rgba(52, 211, 153, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(52, 211, 153, 0.3)'
+                  }}>
+                    Configured
+                  </span>
+                )}
+              </div>
             </div>
 
             <div>
@@ -528,13 +643,33 @@ export default function SettingsPage() {
               <label style={{ display: 'block', fontSize: '0.75rem', color: 'var(--text-faint)', marginBottom: '0.35rem' }}>
                 HuggingFace API Key
               </label>
-              <input
-                type={showKeys ? 'text' : 'password'}
-                value={config.huggingface_api_key || ''}
-                onChange={(e) => handleChange('huggingface_api_key', e.target.value)}
-                className="agri-input"
-                style={{ width: '100%' }}
-              />
+              <div style={{ position: 'relative' }}>
+                <input
+                  type={showKeys ? 'text' : 'password'}
+                  value={config.huggingface_api_key && config.huggingface_api_key !== '********' 
+                    ? config.huggingface_api_key 
+                    : ''}
+                  onChange={(e) => handleChange('huggingface_api_key', e.target.value)}
+                  className="agri-input"
+                  style={{ width: '100%', paddingRight: '90px' }}
+                />
+                {secretsConfigured.huggingface_api_key && config.huggingface_api_key === '********' && (
+                  <span style={{ 
+                    position: 'absolute', 
+                    right: '10px', 
+                    top: '50%', 
+                    transform: 'translateY(-50%)',
+                    fontSize: '0.65rem',
+                    color: '#34d399',
+                    background: 'rgba(52, 211, 153, 0.15)',
+                    padding: '2px 6px',
+                    borderRadius: '4px',
+                    border: '1px solid rgba(52, 211, 153, 0.3)'
+                  }}>
+                    Configured
+                  </span>
+                )}
+              </div>
             </div>
           </div>
         </div>
