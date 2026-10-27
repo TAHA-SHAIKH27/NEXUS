@@ -226,11 +226,43 @@
   color: var(--text-main);
 }
 
-.agri-table tr:hover td {
-  background: rgba(56, 189, 248, 0.04);
-}
-
-/* Pulsing Status Dot */
+.agri-table tr:hover td {
+  background: rgba(56, 189, 248, 0.04);
+}
+
+/* Markdown Table (from Nemotron responses) */
+.markdown-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.markdown-table th {
+  background: rgba(17, 30, 51, 0.85);
+  color: var(--accent-cyan);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.markdown-table td {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  color: var(--text-main);
+}
+
+.markdown-table tr:hover td {
+  background: rgba(56, 189, 248, 0.04);
+}
+
+/* Pulsing Status Dot */
 .status-beacon {
   width: 8px;
   height: 8px;
