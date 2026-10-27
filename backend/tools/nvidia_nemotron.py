@@ -43,7 +43,7 @@ FPO_NEMOTRON_MODELS: Dict[str, Dict[str, str]] = {
 }
 
 DEFAULT_FPO_MODEL = NEMOTRON_BOLT_E4B
-DEFAULT_TIMEOUT_SECONDS = 10
+DEFAULT_TIMEOUT_SECONDS = 60
 
 
 class NvidiaNemotronError(Exception):

@@ -169,16 +169,21 @@ export default function App() {
 
       if (res.ok) {
         const data = await res.json();
-        const replyText = data.speak || data.message || (data.logs && data.logs.join('\n')) || 'Query processed successfully.';
+        // Use the full Nemotron response from reasoning.text when available, fallback to speak
+        const fullResponse = data.reasoning?.text || data.speak || data.message || (data.logs && data.logs.join('\n')) || 'Query processed successfully.';
+        const isLiveModel = data.reasoning?.live === true && (data.reasoning?.provider === 'meterless' || data.reasoning?.provider === 'nvidia_nim');
         
         setMessages(prev => [...prev, {
           sender: 'nexus',
-          text: replyText,
+          text: fullResponse,
           time: formatDistanceToNow(new Date(), { addSuffix: true }),
-          fileData: data.file_data || null
+          fileData: data.file_data || null,
+          reasoning: data.reasoning || null,
+          isLiveModel: isLiveModel
         }]);
 
-        if (data.speak) {
+        // Use short speak for TTS only (voice output)
+        if (voiceEnabled && data.speak) {
           speakText(data.speak, data.speak_lang || 'en');
         }
       } else {
