@@ -20,6 +20,16 @@ from backend.tools import fpo_analytics
 from backend.tools import meterless as meterless_mod
 from backend.tools import nvidia_nemotron as nvidia_mod
 from backend.tools import zetaris as zetaris_mod
+from backend.agent.agri_context import (
+    AgriContext,
+    agri_context_store,
+    get_or_create_context,
+    extract_batch_codes_from_evidence,
+    extract_batch_ids_from_evidence,
+    extract_markets_from_finance,
+    extract_origin_locations,
+    build_context_summary,
+)
 
 INR_Q = Decimal("0.01")
 KG_Q = Decimal("0.001")
@@ -67,27 +77,43 @@ def _kg(value: Optional[Decimal]) -> Optional[float]:
     return float(value.quantize(KG_Q, rounding=ROUND_HALF_UP))
 
 
-def classify_intent(prompt: str) -> str:
+def classify_intent(prompt: str, context: Optional[AgriContext] = None) -> str:
+    """Classify intent, using conversation context for follow-up detection."""
     p = (prompt or "").lower()
+    
+    # Direct intent patterns (explicit new queries) - ORDER MATTERS: more specific first
+    if any(k in p for k in ("net profit", "net margin", "net revenue", "compare profit", "profit comparison")):
+        return INTENT_NET_PROFIT
     if any(k in p for k in ("hold vs sell", "hold versus sell", "hold or sell", "should we sell", "should we hold")):
         return INTENT_HOLD_VS_SELL
     if any(k in p for k in ("which market", "which mandi", "market selection", "best market", "arbitrage")):
         return INTENT_MARKET_SELECTION
-    if any(k in p for k in ("net profit", "net margin", "net revenue", "compare profit", "profit comparison")):
-        return INTENT_NET_PROFIT
-    if any(k in p for k in ("spoilage", "quality window", "perish", "shelf life", "expire")):
+    if any(k in p for k in ("spoilage", "quality window", "perish", "shelf life", "expire", "high risk", "critical", "risk")):
         return INTENT_SPOILAGE
     # Inventory/quantity queries should be checked BEFORE storage/transport
     if any(k in p for k in ("show", "list", "inventory", "quantity", "available", "stock", "how many", "tons", "tonnes", "available stock", "available quantity", "quantity available", "batch", "batches")):
-        return INTENT_INVENTORY  # Treat inventory queries as inventory queries
-    if any(k in p for k in ("storage", "warehouse", "transport", "logistics", "freight")):
-        return INTENT_STORAGE_TRANSPORT
-    if any(k in p for k in ("spoilage", "quality window", "perish", "shelf life", "expire")):
-        return INTENT_SPOILAGE
+        return INTENT_INVENTORY
     if any(k in p for k in ("storage", "warehouse", "transport", "logistics", "freight")):
         return INTENT_STORAGE_TRANSPORT
     if any(k in p for k in ("batch", "recommend", "recommendation", "scn-a", "scn-b", "scn-c", "scn-d", "scn-e", "simulate")):
         return INTENT_BATCH
+    
+    # Follow-up detection: if we have context and this looks like a continuation
+    if context and context.intent:
+        followup_patterns = [
+            r"\b(so|then|where should|where to|what about|how about)\b.*\b(sell|dispatch|market)\b",
+            r"\b(sell them|dispatch them|market for them)\b",
+            r"\b(compare|versus|vs\.?)\b.*\b(market|price|store|hold)\b",
+            r"\b(what if|suppose|if we)\b.*\b(store|hold|sell|keep)\b",
+            r"\b(best|which|where)\b.*\b(market|mandi|buyer)\b",
+            r"\b(recommend|suggestion|advice)\b",
+            r"\bcompare\b.*\b(market|them)\b",
+        ]
+        for pattern in followup_patterns:
+            if re.search(pattern, p, re.I):
+                # Return the previous intent for follow-up queries
+                return context.intent
+    
     return INTENT_GENERAL
 
 
@@ -126,9 +152,13 @@ def retrieve_evidence(
     analytics: Any = fpo_analytics,
     zetaris_client: Any = None,
     config: Optional[Dict[str, Any]] = None,
+    context: Optional[AgriContext] = None,
 ) -> Dict[str, Any]:
-    intent = intent or classify_intent(prompt)
-    crop = extract_crop(prompt) or "Tomato"
+    # Use context for intent classification (follow-up detection)
+    intent = intent or classify_intent(prompt, context)
+    
+    # Use context crop if not explicitly mentioned in prompt
+    crop = extract_crop(prompt) or (context.crop if context else None) or "Tomato"
     batch_code = extract_batch_code(prompt)
     warnings: List[str] = []
     sources: List[Dict[str, Any]] = []
@@ -137,6 +167,17 @@ def retrieve_evidence(
         "batch_code": batch_code,
         "intent": intent,
     }
+    
+    # Include context in payload for downstream use
+    if context:
+        payload["context"] = {
+            "conversation_id": context.conversation_id,
+            "batch_codes": context.batch_codes,
+            "batch_ids": context.batch_ids,
+            "candidate_markets": context.candidate_markets,
+            "origin_locations": context.origin_locations,
+            "risk_level": context.risk_level,
+        }
 
     # Use NL-to-SQL planner for Zetaris queries when client is available
     zetaris_results = []
@@ -549,8 +590,25 @@ def run_pipeline(
     zetaris_client: Any = None,
     meterless_client: Any = None,
     nvidia_client: Any = None,
+    conversation_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    intent = classify_intent(prompt)
+    # Get or create agricultural conversation context
+    context = get_or_create_context(conversation_id)
+    
+    # Classify intent with context (handles follow-ups)
+    intent = classify_intent(prompt, context)
+    
+    # Update context with new intent
+    if intent != INTENT_GENERAL:
+        agri_context_store.set_intent(context.conversation_id, intent)
+        context.intent = intent
+    
+    # Extract and update crop in context
+    crop = extract_crop(prompt)
+    if crop:
+        agri_context_store.set_crop(context.conversation_id, crop)
+        context.crop = crop
+    
     stages = ["intent", "evidence", "finance", "reasoning", "validation", "recommendation"]
     evidence = retrieve_evidence(
         prompt,
@@ -558,8 +616,32 @@ def run_pipeline(
         analytics=analytics,
         zetaris_client=zetaris_client,
         config=config,
+        context=context,
     )
+    
+    # Update context with evidence-derived data
+    batch_codes = extract_batch_codes_from_evidence(evidence)
+    if batch_codes:
+        agri_context_store.append_batch_codes(context.conversation_id, batch_codes)
+    
+    batch_ids = extract_batch_ids_from_evidence(evidence)
+    if batch_ids:
+        agri_context_store.append_batch_ids(context.conversation_id, batch_ids)
+    
+    origin_locations = extract_origin_locations(evidence)
+    if origin_locations:
+        agri_context_store.set_origin_locations(context.conversation_id, origin_locations)
+    
     finance = calculate_finance(evidence)
+    
+    # Update context with finance results
+    markets = extract_markets_from_finance(finance)
+    if markets:
+        agri_context_store.set_candidate_markets(context.conversation_id, markets)
+    
+    if finance.get("spoilage_risk_level"):
+        agri_context_store.set_risk_level(context.conversation_id, finance["spoilage_risk_level"])
+    
     reasoning = reason_with_models(
         evidence,
         finance,
@@ -567,6 +649,7 @@ def run_pipeline(
         meterless_client=meterless_client,
         nvidia_client=nvidia_client,
     )
+    
     recommendation = {
         "action": finance.get("recommended_action"),
         "crop": finance.get("crop"),
@@ -585,6 +668,12 @@ def run_pipeline(
         },
         "notes": finance.get("calculation_notes"),
     }
+    
+    # Update context with recommendation
+    agri_context_store.set_recommendation(context.conversation_id, recommendation)
+    agri_context_store.set_finance(context.conversation_id, finance)
+    agri_context_store.set_evidence(context.conversation_id, evidence.get("sources", []))
+    
     live = bool(reasoning.get("live"))
     speak = reasoning.get("text") or "Decision computed from retrieved evidence."
     return {
@@ -592,6 +681,7 @@ def run_pipeline(
         "live_model": live,
         "provider": reasoning.get("provider"),
         "intent": intent,
+        "conversation_id": context.conversation_id,
         "stages": stages,
         "evidence": {
             "sources": evidence.get("sources"),
@@ -615,6 +705,7 @@ def run_pipeline(
         },
         "logs": [
             f"INTENT: {intent}",
+            f"CONVERSATION: {context.conversation_id[:8]}",
             f"SOURCES: {len(evidence.get('sources') or [])}",
             f"ACTION: {recommendation.get('action')}",
             f"REASONING_PROVIDER: {reasoning.get('provider')} live={live}",
@@ -644,10 +735,14 @@ _DECISION_HINTS = (
     "inventory", "stock level", "quantity available", "tons of", "tonnes of",
     "compare prices", "compare tomato prices", "compare onion prices",
     "compare potato prices", "compare prices in",
+    # Follow-up patterns
+    "so where", "where should", "where to sell", "sell them", "dispatch them",
+    "what about", "how about", "compare", "versus", "vs ", "best market",
+    "recommend", "suggestion", "advice",
 )
 
 
-def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = None, conversation_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
     p = (prompt or "").lower()
     if not any(h in p for h in _DECISION_HINTS):
         return None
@@ -691,6 +786,7 @@ def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = 
         zetaris_client=zetaris_client,
         meterless_client=meterless_client,
         nvidia_client=nvidia_client,
+        conversation_id=conversation_id,
     )
     return {
         "speak": result["speak"],
@@ -705,6 +801,7 @@ def handle_fpo_decision_command(prompt: str, config: Optional[Dict[str, Any]] = 
         "live_model": result["live_model"],
         "provider": result["provider"],
         "intent": result["intent"],
+        "conversation_id": result.get("conversation_id"),
         "recommendation": result["recommendation"],
         "evidence": result["evidence"],
         "finance": result["finance"],

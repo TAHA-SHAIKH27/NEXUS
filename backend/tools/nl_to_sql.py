@@ -373,6 +373,16 @@ def sanitize_literal(value: Any) -> Any:
 
 # --- Intent Parsing ---
 
+# Follow-up patterns that indicate continuation of previous agricultural context
+FOLLOWUP_PATTERNS = [
+    r"\b(so|then|where should|where to|what about|how about)\b.*\b(sell|dispatch|market)\b",
+    r"\b(sell them|dispatch them|market for them)\b",
+    r"\b(compare|versus|vs\.?)\b.*\b(market|price|store|hold)\b",
+    r"\b(what if|suppose|if we)\b.*\b(store|hold|sell|keep)\b",
+    r"\b(best|which|where)\b.*\b(market|mandi|buyer)\b",
+    r"\b(recommend|suggestion|advice)\b",
+]
+
 CROP_ALIASES = {
     "tomato": "Tomato", "tomatoes": "Tomato",
     "onion": "Onion", "onions": "Onion",
@@ -482,6 +492,15 @@ def extract_time_window(text: str) -> Optional[int]:
     if m:
         return int(m.group(1))
     return None
+
+
+def is_agricultural_followup(text: str) -> bool:
+    """Detect if the query is a follow-up to an agricultural conversation."""
+    text_lower = text.lower().strip()
+    for pattern in FOLLOWUP_PATTERNS:
+        if re.search(pattern, text_lower, re.I):
+            return True
+    return False
 
 
 def classify_intent_type(text: str) -> str:

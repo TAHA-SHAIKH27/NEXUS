@@ -236,6 +236,10 @@ def load_config() -> dict:
                 data.setdefault("zetaris_default_limit", 100)
                 data.setdefault("zetaris_max_limit", 100)
                 data.setdefault("zetaris_timeout_seconds", 30)
+                # External API keys
+                data.setdefault("openrouteservice_api_key", "")
+                data.setdefault("datagov_api_key", "")
+                data.setdefault("market_price_timeout", 30)
                 return data
         except Exception:
             pass
@@ -262,6 +266,9 @@ def load_config() -> dict:
         "zetaris_default_limit": 100,
         "zetaris_max_limit": 100,
         "zetaris_timeout_seconds": 30,
+        "openrouteservice_api_key": "",
+        "datagov_api_key": "",
+        "market_price_timeout": 30,
     }
 
 def save_config(config: dict):
@@ -1685,6 +1692,21 @@ def document_stream(req: DocumentAnalysisRequest):
     return StreamingResponse(_gen(), media_type="text/plain; charset=utf-8")
 
 
+# Agricultural conversation ID tracking (session-scoped)
+_agri_conversation_ids: Dict[str, str] = {}
+_agri_conv_lock = threading.Lock()
+
+def _get_agri_conversation_id(api_key: Optional[str] = None) -> str:
+    """Get or create agricultural conversation ID for the session."""
+    # Use API key or a default session identifier
+    session_key = api_key or "default_session"
+    with _agri_conv_lock:
+        if session_key not in _agri_conversation_ids:
+            import uuid
+            _agri_conversation_ids[session_key] = str(uuid.uuid4())[:12]
+        return _agri_conversation_ids[session_key]
+
+
 @app.post("/api/command")
 def process_command(req: CommandRequest):
     """Sync (threadpool) endpoint — NEVER block the event loop.
@@ -1709,6 +1731,10 @@ def process_command(req: CommandRequest):
             if prompt_lower in ["clear memory", "forget everything", "reset"]:
                 phase1_memory.clear()
             phase1_runtime.runtime.conversation.clear()
+            # Also clear agricultural conversation context
+            from backend.agent.agri_context import agri_context_store
+            conv_id = _get_agri_conversation_id(req.apiKey)
+            agri_context_store.delete(conv_id)
         except Exception:
             pass
         return {
@@ -1745,7 +1771,8 @@ def process_command(req: CommandRequest):
     # Try the full decision pipeline first for complex queries
     try:
         from backend.tools import fpo_decision_agent as _fpo_decision
-        _fpo_decision_result = _fpo_decision.handle_fpo_decision_command(req.prompt, load_config())
+        conv_id = _get_agri_conversation_id(req.apiKey)
+        _fpo_decision_result = _fpo_decision.handle_fpo_decision_command(req.prompt, load_config(), conv_id)
         if _fpo_decision_result is not None:
             return _fpo_decision_result
     except Exception as exc:

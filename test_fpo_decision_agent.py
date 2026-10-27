@@ -7,6 +7,7 @@ from backend.tools.fpo_decision_agent import (
     run_pipeline,
     validate_reasoning,
 )
+from backend.agent.agri_context import AgriContext, agri_context_store
 
 
 class StubAnalytics:
@@ -190,3 +191,118 @@ def test_handle_command_routes_decision():
     assert result is not None
     assert result["live_model"] is False
     assert "file_data" in result
+
+
+def test_conversation_context_persists_across_turns():
+    """Test that agricultural conversation context persists across multiple turns."""
+    conv_id = "test-conv-123"
+    
+    # First turn: query high-risk tomatoes
+    result1 = run_pipeline(
+        "Find all extremely high-risk tomato batches",
+        analytics=StubAnalytics(),
+        conversation_id=conv_id,
+    )
+    assert result1["conversation_id"] == conv_id
+    assert result1["intent"] == "spoilage"
+    assert result1["evidence"]["crop"] == "Tomato"
+    
+    # Check context was created and populated
+    ctx = agri_context_store.get(conv_id)
+    assert ctx is not None
+    assert ctx.intent == "spoilage"
+    assert ctx.crop == "Tomato"
+    assert len(ctx.batch_codes) > 0  # Should have extracted batch codes
+    msg_count_after_first = ctx.message_count
+    
+    # Second turn: follow-up "So where should I sell them?"
+    result2 = run_pipeline(
+        "So where should I sell them?",
+        analytics=StubAnalytics(),
+        conversation_id=conv_id,
+    )
+    assert result2["conversation_id"] == conv_id
+    # Follow-up should inherit the previous intent
+    assert result2["intent"] == "spoilage"
+    assert result2["evidence"]["crop"] == "Tomato"
+    
+    # Context should be updated with new data
+    ctx = agri_context_store.get(conv_id)
+    assert ctx.message_count > msg_count_after_first  # Should have incremented
+    assert len(ctx.candidate_markets) > 0  # Should have markets from finance
+    assert ctx.risk_level == "high_risk"
+
+
+def test_followup_classify_intent_uses_context():
+    """Test that follow-up queries use context for intent classification."""
+    ctx = AgriContext(conversation_id="test-followup", intent="spoilage", crop="Tomato")
+    
+    # Without context, this would be INTENT_GENERAL
+    assert classify_intent("So where should I sell them?") == "general"
+    
+    # With context, it should use the previous intent
+    assert classify_intent("So where should I sell them?", ctx) == "spoilage"
+    assert classify_intent("Where to dispatch them?", ctx) == "spoilage"
+    assert classify_intent("What about Mumbai market?", ctx) == "spoilage"
+    assert classify_intent("Compare markets for them", ctx) == "spoilage"
+
+
+def test_new_query_overrides_context():
+    """Test that explicit new queries override context."""
+    ctx = AgriContext(conversation_id="test-override", intent="spoilage", crop="Tomato")
+    
+    # Explicit new intent should win
+    assert classify_intent("Which market gives best net profit for onions?", ctx) == "net_profit"
+    assert classify_intent("Show onion inventory", ctx) == "inventory"
+    assert classify_intent("Hold vs sell potatoes", ctx) == "hold_vs_sell"
+
+
+def test_agri_context_store_crud():
+    """Test basic CRUD operations on AgriContextStore."""
+    store = agri_context_store
+    
+    # Create
+    ctx = store.create("test-crud-1")
+    assert ctx.conversation_id == "test-crud-1"
+    assert ctx.intent is None
+    
+    # Update
+    ctx = store.update("test-crud-1", intent="market_selection", crop="Onion")
+    assert ctx.intent == "market_selection"
+    assert ctx.crop == "Onion"
+    
+    # Get
+    ctx = store.get("test-crud-1")
+    assert ctx.intent == "market_selection"
+    assert ctx.crop == "Onion"
+    
+    # Append batch codes
+    ctx = store.append_batch_codes("test-crud-1", ["BAT-1", "BAT-2"])
+    assert ctx.batch_codes == ["BAT-1", "BAT-2"]
+    
+    # Append batch IDs
+    ctx = store.append_batch_ids("test-crud-1", ["id-1", "id-2"])
+    assert ctx.batch_ids == ["id-1", "id-2"]
+    
+    # Delete
+    assert store.delete("test-crud-1") is True
+    assert store.get("test-crud-1") is None
+    assert store.delete("test-crud-1") is False
+
+
+def test_context_expiry():
+    """Test that expired contexts are cleaned up."""
+    store = agri_context_store
+    
+    # Create context with old timestamp
+    ctx = store.create("test-expiry")
+    # Manually set old timestamp
+    import time
+    ctx.updated_at = time.time() - 3600  # 1 hour ago (older than 30 min TTL)
+    store._save_all({"test-expiry": ctx})
+    
+    # Should return None for expired context
+    assert store.get("test-expiry") is None
+    
+    # Clean up
+    store.delete("test-expiry")
