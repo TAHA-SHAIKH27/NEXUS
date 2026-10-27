@@ -8,6 +8,32 @@ Built for the **Open Agent Hackathon 2026**.
 
 > **Submission integrity:** This is a working prototype built around a synthetic agricultural dataset, not a deployed live production system. Database and unit-test success do not mean that every external API is working at all times. Decisions requiring missing or stale price, route, or cost evidence must be presented as conditional, not guaranteed profit.
 
+## The problem: post-harvest losses in India
+
+> **India's agricultural post-harvest losses are significant.** A Government of India–commissioned **NABCONS (2022)** study estimated losses of **4.87%–11.61% for vegetables** and **6.02%–15.05% for fruits**, depending on the commodity. These are *commodity-specific post-harvest loss estimates*, not a single annual wastage percentage or a claim that NEXUS can eliminate all of them.
+
+**Official sources:**
+- [Ministry of Food Processing Industries / Press Information Bureau — Post Harvest Food Loss (20 December 2022)](https://www.pib.gov.in/PressReleaseIframePage.aspx?PRID=1885038)
+- [Ministry of Food Processing Industries — Annual Report 2024–25, section 2.6 / Table 2.11](https://www.mofpi.gov.in/sites/default/files/mofpi_annual_report_2024-25_english_21.08.2025.pdf)
+
+Behind those estimates are practical problems: harvested vegetables have a limited saleable life; farmers may lack timely access to reliable prices, suitable buyers, transport and storage; delays and spoilage reduce the value recovered from their work. Aggregation helps, but it doesn't automatically answer where, when or whether an FPO should sell its inventory.
+
+### Our proposed farmer-to-FPO model
+
+1. **Farmers harvest crops.** Finding individual buyers and arranging storage or transport can be difficult, especially for perishables.
+2. **The FPO buys or aggregates produce.** Under an agreed procurement arrangement, farmers can receive payment from the FPO without individually managing the onward wholesale sale. **Payment timing and terms depend on the actual FPO arrangement; NEXUS does not process or guarantee payment.**
+3. **The FPO records its stock.** Harvest dates, batch IDs, quantities, warehouses, procurement and storage expenses, and spoilage risk are stored in the operational data system.
+4. **NEXUS analyzes the next move.** It makes tool calls to retrieve batch facts through **Zetaris + PostgreSQL**, obtain available mandi prices, calculate **OpenRouteService** routes and **Open-Meteo** weather, and run deterministic financial comparisons. **Meterless/Nightshift + NVIDIA Nemotron** can explain the grounded recommendation when the configured runtime succeeds.
+5. **The FPO decides and dispatches.** It compares feasible markets, buyer acceptance, travel and delivery time, quality deterioration, total costs and recoverable proceeds. The goal is **higher feasible net returns or smaller avoidable losses**, not blindly chasing the highest displayed wholesale price.
+
+### What NEXUS is trying to change
+
+A warehouse might hold several tonnes of tomatoes that have only a short quality window left. Selling locally may be fast but yield a lower price; driving farther may offer a higher quote but also increase time, transport cost and spoilage risk. **NEXUS is designed to make that trade-off visible before the produce loses more value.**
+
+**Mission:** reduce preventable post-harvest losses, support smarter FPO selling decisions, and help agricultural communities recover more value from harvested produce. NEXUS is a decision-support prototype—not a guarantee of profit, farmer payment or zero crop waste.
+
+---
+
 ## Why this matters
 
 A farmer or FPO operator may have tonnes of tomatoes approaching the end of their saleable window. The nearest mandi is not always the most profitable; the market with the highest quoted price might be too far away, involve costly transport, or expose produce to deterioration. A useful decision must combine **inventory, quality risk, market price, journey time, transport cost, storage cost, and uncertainty** rather than answer with a generic “sell now.”
