@@ -161,11 +161,17 @@ export default function App() {
     setBusy(true);
 
     try {
-      const res = await fetch('/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: cleanPrompt })
-      });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 130000); // 130s timeout
+        
+        const res = await fetch('/api/command', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt: cleanPrompt }),
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
 
       if (res.ok) {
         const data = await res.json();

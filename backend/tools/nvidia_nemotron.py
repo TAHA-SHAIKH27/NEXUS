@@ -43,7 +43,7 @@ FPO_NEMOTRON_MODELS: Dict[str, Dict[str, str]] = {
 }
 
 DEFAULT_FPO_MODEL = NEMOTRON_BOLT_E4B
-DEFAULT_TIMEOUT_SECONDS = 60
+DEFAULT_TIMEOUT_SECONDS = 120
 
 
 class NvidiaNemotronError(Exception):
@@ -112,7 +112,7 @@ class NvidiaFpoConfig:
     api_key: str = ""
     model: str = DEFAULT_FPO_MODEL
     timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS
-    max_retries: int = 2
+    max_retries: int = 3
 
     @classmethod
     def from_config_dict(cls, config: Optional[Dict[str, Any]] = None) -> "NvidiaFpoConfig":

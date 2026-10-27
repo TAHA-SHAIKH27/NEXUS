@@ -100,7 +100,7 @@ def test_chat_sends_required_headers_and_returns_string():
         assert headers["meterless-app"] == "nexus"
         assert headers["meterless-scope"] == "user"
         payload = json.loads(body.decode("utf-8"))
-        assert payload["model"] == "meterless/auto"
+        assert payload["model"] == "meterless/deep"
         assert payload["messages"][-1]["content"] == "hello"
         return 200, {"choices": [{"message": {"content": "world"}}]}
 
