@@ -51,17 +51,17 @@ class GenerationConfig:
         if self.target_counts is None:
             self.target_counts = {
                 "fpos": 50,
-                "farmers": 15000,
-                "farms": 20000,
+                "farmers": 16000,
+                "farms": 22000,
                 "crops": 50,
-                "harvest_batches": 75000,
-                "warehouses": 400,
-                "inventory": 75000,
-                "market_prices": 180000,
-                "buyers": 2000,
-                "sales_orders": 80000,
-                "transport_routes": 40000,
-                "storage_costs": 12500,
+                "harvest_batches": 85000,
+                "warehouses": 550,
+                "inventory": 85000,
+                "market_prices": 195000,
+                "buyers": 2200,
+                "sales_orders": 88000,
+                "transport_routes": 44000,
+                "storage_costs": 13500,
             }
         
         if self.crop_data is None:
