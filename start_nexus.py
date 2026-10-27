@@ -88,7 +88,7 @@ def main():
         
         print("\n[Start] All services running!")
         print("  Backend:  http://127.0.0.1:8000")
-        print("  Frontend: http://localhost:3000")
+        print("  Frontend: http://localhost:5173")
         print("  Voice:    Browser WebSocket (click mic button)")
         print("\nPress Ctrl+C to stop all services.\n")
         

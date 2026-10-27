@@ -95,8 +95,36 @@ class NexusSupervisor:
             except Exception:
                 pass
 
+    def _free_port(self, port: int = 8000):
+        """Free port if occupied by a stale process before starting uvicorn."""
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(("127.0.0.1", port)) != 0:
+                    return
+        except Exception:
+            return
+
+        log(f"Port {port} is currently in use. Attempting to release it...")
+        try:
+            import psutil
+            current_pid = os.getpid()
+            for conn in psutil.net_connections(kind="inet"):
+                if conn.laddr.port == port and conn.pid and conn.pid != current_pid:
+                    try:
+                        p = psutil.Process(conn.pid)
+                        log(f"Terminating stale process PID {conn.pid} ({p.name()}) holding port {port}")
+                        p.terminate()
+                        p.wait(timeout=3)
+                    except Exception as ex:
+                        log(f"Could not terminate PID {conn.pid}: {ex}")
+            time.sleep(1)
+        except Exception as e:
+            log(f"Port check encountered: {e}")
+
     def start_nexus(self) -> subprocess.Popen:
         """Launch main.py as a subprocess."""
+        self._free_port(8000)
         log(f"Starting N.E.X.U.S. Core backend ({self.main_script})...")
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
@@ -108,6 +136,7 @@ class NexusSupervisor:
         # Start uvicorn main:app with piped stderr/stdout for crash capture
         self.process = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"],
+
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -269,6 +298,17 @@ class NexusSupervisor:
                 return False
             log("Restarting N.E.X.U.S. backend in a fresh process.")
             return True
+
+        # Socket binding collision (e.g. WinError 10048)
+        if "10048" in crash_output or "only one usage of each socket address" in crash_output:
+            log("Port 8000 collision detected. Freeing port 8000...")
+            self._free_port(8000)
+            time.sleep(1)
+            if self.recovery_count <= MAX_CRASH_RECOVERIES:
+                log("Retrying N.E.X.U.S. backend launch after clearing port conflict.")
+                return True
+            log(f"Max recovery limit ({MAX_CRASH_RECOVERIES}) reached. Halting auto-recovery.")
+            return False
 
         # Diagnostic summary
         parsed = recovery_engine.parse_traceback(crash_output)

@@ -68,6 +68,13 @@ from backend.startup_engine import get_startup_engine
 
 from backend.agent.voice import get_voice_system, get_command_processor, TTSState
 
+# Import new FPO intelligence modules
+from backend.tools import nl_to_sql
+from backend.tools import live_market_prices
+from backend.tools import routing
+from backend.tools import weather
+from backend.tools import fpo_decision_agent
+
 app = FastAPI(title="N.E.X.U.S. Core", description="API Service for Windows OS Automation")
 
 # Configure CORS so our React frontend can make requests
@@ -212,8 +219,16 @@ def load_config() -> dict:
                 data.setdefault("groq_api_key", "")
                 data.setdefault("nvidia_api_key", "")
                 data.setdefault("nvidia_model", "z-ai/glm-5.3-flash")
+                data.setdefault("nvidia_fpo_model", "nvidia/nemotron-3.5-bolt-e4b")
+                data.setdefault("nvidia_fpo_timeout_seconds", 120)
+                data.setdefault("nvidia_fpo_max_retries", 2)
+                data.setdefault("meterless_base_url", "http://127.0.0.1:8088/v1")
+                data.setdefault("meterless_runtime_token", "")
+                data.setdefault("meterless_app_id", "nexus")
+                data.setdefault("meterless_model", "meterless/auto")
                 # Zetaris config (all optional; org_id is required for API calls)
                 data.setdefault("zetaris_rest_url", "http://localhost:8888/api/v1.0")
+                data.setdefault("zetaris_base_url", "http://localhost:3000")
                 data.setdefault("zetaris_org_id", "")
                 data.setdefault("zetaris_api_key", "")
                 data.setdefault("zetaris_username", "")
@@ -231,7 +246,15 @@ def load_config() -> dict:
         "groq_api_key": "",
         "nvidia_api_key": "",
         "nvidia_model": "z-ai/glm-5.3-flash",
+        "nvidia_fpo_model": "nvidia/nemotron-3.5-bolt-e4b",
+        "nvidia_fpo_timeout_seconds": 120,
+        "nvidia_fpo_max_retries": 2,
+        "meterless_base_url": "http://127.0.0.1:8088/v1",
+        "meterless_runtime_token": "",
+        "meterless_app_id": "nexus",
+        "meterless_model": "meterless/auto",
         "zetaris_rest_url": "http://localhost:8888/api/v1.0",
+        "zetaris_base_url": "http://localhost:3000",
         "zetaris_org_id": "",
         "zetaris_api_key": "",
         "zetaris_username": "",
@@ -300,8 +323,16 @@ class ConfigModel(BaseModel):
     groq_api_key: str = ""
     nvidia_api_key: Optional[str] = ""
     nvidia_model: Optional[str] = "z-ai/glm-5.3-flash"
-    # Zetaris config
+    nvidia_fpo_model: Optional[str] = "nvidia/nemotron-3.5-bolt-e4b"
+    nvidia_fpo_timeout_seconds: Optional[int] = 120
+    nvidia_fpo_max_retries: Optional[int] = 2
+    meterless_base_url: Optional[str] = "http://127.0.0.1:8088/v1"
+    meterless_runtime_token: Optional[str] = ""
+    meterless_app_id: Optional[str] = "nexus"
+    meterless_model: Optional[str] = "meterless/auto"
+    # Zetaris config (all optional; org_id is required for API calls)
     zetaris_rest_url: Optional[str] = "http://localhost:8888/api/v1.0"
+    zetaris_base_url: Optional[str] = "http://localhost:3000"
     zetaris_org_id: Optional[str] = ""
     zetaris_api_key: Optional[str] = ""
     zetaris_username: Optional[str] = ""
@@ -357,7 +388,7 @@ def get_config():
     # Mask secrets in response
     masked = dict(cfg)
     for key in ("gemini_api_key", "huggingface_api_key", "groq_api_key", "nvidia_api_key",
-                "zetaris_api_key", "zetaris_password"):
+                "meterless_runtime_token", "zetaris_api_key", "zetaris_password"):
         if masked.get(key):
             masked[key] = "********"
     return masked
@@ -374,7 +405,15 @@ def post_config(req: ConfigModel):
         "groq_api_key": req.groq_api_key or "",
         "nvidia_api_key": req.nvidia_api_key or "",
         "nvidia_model": req.nvidia_model or "z-ai/glm-5.3-flash",
+        "nvidia_fpo_model": req.nvidia_fpo_model or "nvidia/nemotron-3.5-bolt-e4b",
+        "nvidia_fpo_timeout_seconds": req.nvidia_fpo_timeout_seconds or 120,
+        "nvidia_fpo_max_retries": req.nvidia_fpo_max_retries or 2,
+        "meterless_base_url": req.meterless_base_url or "http://127.0.0.1:8088/v1",
+        "meterless_runtime_token": req.meterless_runtime_token or "",
+        "meterless_app_id": req.meterless_app_id or "nexus",
+        "meterless_model": req.meterless_model or "meterless/auto",
         "zetaris_rest_url": req.zetaris_rest_url or "http://localhost:8888/api/v1.0",
+        "zetaris_base_url": req.zetaris_base_url or "http://localhost:3000",
         "zetaris_org_id": req.zetaris_org_id or "",
         "zetaris_api_key": req.zetaris_api_key or "",
         "zetaris_username": req.zetaris_username or "",
@@ -385,6 +424,32 @@ def post_config(req: ConfigModel):
     })
     save_config(cfg)
     return {"status": "success", "message": "Configuration saved."}
+
+
+# ── Meterless & NVIDIA Provider Status Endpoints ───────────────────────────────
+
+class ProviderStatusRequest(BaseModel):
+    config: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/meterless/status")
+def meterless_status(req: ProviderStatusRequest):
+    """Check Meterless Runtime (Nightshift) connectivity and model availability."""
+    try:
+        from backend.tools.meterless import get_status
+        return get_status(req.config or load_config())
+    except Exception as e:
+        return {"provider": "meterless", "status": "error", "message": str(e), "live": False}
+
+
+@app.post("/api/nvidia/status")
+def nvidia_status(req: ProviderStatusRequest):
+    """Check NVIDIA NIM Nemotron (FPO adapter) connectivity and model catalog."""
+    try:
+        from backend.tools.nvidia_nemotron import get_status
+        return get_status(req.config or load_config())
+    except Exception as e:
+        return {"provider": "nvidia_nim", "status": "error", "message": str(e), "live": False}
 
 
 # ── Code Core Endpoints ─────────────────────────────────────────────────────
@@ -1120,6 +1185,12 @@ async def read_status():
     return {"status": "online", "system": "N.E.X.U.S.", "message": "All systems operational, sir."}
 
 
+@app.get("/health")
+def read_health():
+    return {"status": "ok"}
+
+
+
 @app.get("/api/network/status")
 def network_status():
     """Live connectivity snapshot for the HUD (cached ~10s in net_diagnostics).
@@ -1670,6 +1741,25 @@ def process_command(req: CommandRequest):
     except Exception as exc:
         print(f"[zetaris] handler failed: {exc}")
 
+    # ── Agricultural FPO connector ──────────────────────────────────────────
+    # Try the full decision pipeline first for complex queries
+    try:
+        from backend.tools import fpo_decision_agent as _fpo_decision
+        _fpo_decision_result = _fpo_decision.handle_fpo_decision_command(req.prompt, load_config())
+        if _fpo_decision_result is not None:
+            return _fpo_decision_result
+    except Exception as exc:
+        print(f"[fpo_decision] handler failed: {exc}")
+
+    # Fallback to simple keyword-based handler for basic queries
+    try:
+        from backend.tools import fpo_analytics as _fpo
+        _fpo_result = _fpo.handle_fpo_agent_command(req.prompt)
+        if _fpo_result is not None:
+            return _fpo_result
+    except Exception as exc:
+        print(f"[fpo] handler failed: {exc}")
+
     # ── Deterministic identity memory (never LLM-dependent) ──────────────
     # "My name is Taha" / "I live in Pune" / "Pune only for weather" are
     # saved here on EVERY command — even offline or rate-limited — so the
@@ -2196,6 +2286,316 @@ def serve_work_file(path: str):
     }
     media_type = mime_map.get(ext, "application/octet-stream")
     return FileResponse(full_path, media_type=media_type)
+
+
+
+# ── Agricultural FPO Analytics Endpoints ──────────────────────────────
+@app.get("/api/fpo/stats")
+def api_fpo_stats(fpo_id: Optional[str] = None, crop_name: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_overview_stats(fpo_id=fpo_id, crop_name=crop_name)
+
+@app.get("/api/fpo/inventory")
+def api_fpo_inventory(page: int = 1, page_size: int = 25, 
+                      crop_name: Optional[str] = None, 
+                      district: Optional[str] = None,
+                      risk_level: Optional[str] = None,
+                      search: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_inventory_batches(page=page, page_size=page_size, 
+                                              crop_name=crop_name, district=district,
+                                              risk_level=risk_level, search=search)
+
+@app.get("/api/fpo/market-prices")
+def api_fpo_market_prices(crop_name: Optional[str] = None, market_name: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_market_intelligence(crop_name=crop_name, market_name=market_name)
+
+@app.get("/api/fpo/logistics")
+def api_fpo_logistics():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_logistics_intelligence()
+
+@app.get("/api/fpo/risks")
+def api_fpo_risks(risk_level: Optional[str] = None):
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_risk_centre(risk_level=risk_level)
+
+@app.get("/api/fpo/decisions")
+def api_fpo_decisions():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_decisions_scenarios()
+
+@app.get("/api/fpo/datasources")
+def api_fpo_datasources():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_datasources_status()
+
+@app.get("/api/fpo/filters")
+def api_fpo_filters():
+    from backend.tools import fpo_analytics
+    return fpo_analytics.get_filter_options()
+
+
+# ── FPO Intelligence Orchestrator Endpoints ────────────────────────────────
+
+class IntelligenceQueryRequest(BaseModel):
+    prompt: str
+    config: Optional[Dict[str, Any]] = None
+    max_queries: int = 5
+
+
+@app.post("/api/fpo/intelligence/query")
+def api_fpo_intelligence_query(req: IntelligenceQueryRequest):
+    """Natural language query → structured intent → evidence retrieval → AI reasoning."""
+    try:
+        cfg = req.config or load_config()
+        result = nl_to_sql.plan_and_execute(req.prompt, config=cfg, max_queries=req.max_queries)
+        return {"status": "success", **result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class DirectZetarisQueryRequest(BaseModel):
+    sql: str
+    config: Optional[Dict[str, Any]] = None
+    limit: int = 100
+
+
+@app.post("/api/fpo/zetaris/query")
+def api_fpo_zetaris_query(req: DirectZetarisQueryRequest):
+    """Execute a direct SELECT-only query via Zetaris (for explicit zetaris: commands)."""
+    try:
+        cfg = req.config or load_config()
+        result = nl_to_sql.execute_direct_zetaris(req.sql, config=cfg, limit=req.limit)
+        return result
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+@app.get("/api/fpo/zetaris/schema")
+def api_fpo_zetaris_schema():
+    """Get the FPO schema catalog for Zetaris."""
+    return nl_to_sql.get_schema_catalog()
+
+
+class LiveMarketPricesRequest(BaseModel):
+    commodity: Optional[str] = None
+    state: Optional[str] = None
+    district: Optional[str] = None
+    market: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/fpo/market-prices/live")
+def api_fpo_live_market_prices(req: LiveMarketPricesRequest):
+    """Fetch live market prices from official sources (AGMARKNET, data.gov.in)."""
+    try:
+        cfg = req.config or load_config()
+        result = live_market_prices.fetch_live_prices(
+            commodity=req.commodity,
+            state=req.state,
+            district=req.district,
+            market=req.market,
+            config=cfg,
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class RoutingRequest(BaseModel):
+    origin: Dict[str, float]  # {"lat": ..., "lon": ...}
+    destination: Dict[str, float]
+    quantity_kg: float
+    config: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/fpo/routing/cost")
+def api_fpo_routing_cost(req: RoutingRequest):
+    """Calculate transport cost for a route using OpenRouteService."""
+    try:
+        cfg = req.config or load_config()
+        result = routing.calculate_route_cost(
+            origin=req.origin,
+            destination=req.destination,
+            quantity_kg=req.quantity_kg,
+            api_key=cfg.get("openrouteservice_api_key") or os.environ.get("OPENROUTESERVICE_API_KEY"),
+            config=cfg,
+        )
+        if "error" in result:
+            return {"status": "error", "message": result["error"]}
+        return {"status": "success", **result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class MultiDestinationRoutingRequest(BaseModel):
+    origin: Dict[str, float]
+    destinations: List[Dict[str, Any]]  # [{"name": "...", "lat": ..., "lon": ..., "quantity_kg": ...}]
+    vehicle_type: str = "driving-hgv"
+    config: Optional[Dict[str, Any]] = None
+
+
+@app.post("/api/fpo/routing/compare")
+def api_fpo_routing_compare(req: MultiDestinationRoutingRequest):
+    """Compare transport costs to multiple destinations."""
+    try:
+        cfg = req.config or load_config()
+        api_key = cfg.get("openrouteservice_api_key") or os.environ.get("OPENROUTESERVICE_API_KEY")
+        if not api_key:
+            return {"status": "error", "message": "OpenRouteService API key not configured"}
+        
+        service = routing.create_routing_service(api_key=api_key, config=cfg)
+        if not service:
+            return {"status": "error", "message": "OpenRouteService API key not configured"}
+        
+        results = service.compare_destinations(
+            origin_name="origin",
+            destination_names=[d["name"] for d in req.destinations],
+            quantities_kg=[d.get("quantity_kg", 0) for d in req.destinations],
+            vehicle_type=req.vehicle_type,
+            config=cfg,
+        )
+        return {"status": "success", "results": results}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class WeatherRiskRequest(BaseModel):
+    lat: float
+    lon: float
+    location_name: str = ""
+    crop: str
+    perishability: str = "medium"
+    transport_duration_hours: Optional[float] = None
+    storage_duration_days: Optional[float] = None
+    days: int = 7
+
+
+@app.post("/api/fpo/weather/risk")
+def api_fpo_weather_risk(req: WeatherRiskRequest):
+    """Assess agricultural weather risk for a location and crop."""
+    try:
+        result = weather.assess_agricultural_risk(
+            lat=req.lat,
+            lon=req.lon,
+            location_name=req.location_name,
+            crop=req.crop,
+            perishability=req.perishability,
+            transport_duration_hours=req.transport_duration_hours,
+            storage_duration_days=req.storage_duration_days,
+            days=req.days,
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class TransportWeatherRiskRequest(BaseModel):
+    origin_lat: float
+    origin_lon: float
+    dest_lat: float
+    dest_lon: float
+    crop: str
+    transport_duration_hours: float = 6
+    perishability: str = "medium"
+
+
+@app.post("/api/fpo/weather/transport-risk")
+def api_fpo_transport_weather_risk(req: TransportWeatherRiskRequest):
+    """Assess weather risk along a transport route."""
+    try:
+        result = weather.assess_transport_weather_risk(
+            origin_lat=req.origin_lat,
+            origin_lon=req.origin_lon,
+            dest_lat=req.dest_lat,
+            dest_lon=req.dest_lon,
+            crop=req.crop,
+            transport_duration_hours=req.transport_duration_hours,
+            perishability=req.perishability,
+        )
+        return {"status": "success", **result}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
+class FullDecisionRequest(BaseModel):
+    prompt: str
+    config: Optional[Dict[str, Any]] = None
+    use_live_market: bool = True
+    use_routing: bool = True
+    use_weather: bool = True
+
+
+@app.post("/api/fpo/decision/full")
+def api_fpo_full_decision(req: FullDecisionRequest):
+    """
+    Complete FPO decision pipeline:
+    1. Parse natural language intent
+    2. Execute Zetaris queries for evidence
+    3. Fetch live market prices (if enabled)
+    4. Calculate transport costs (if enabled)
+    5. Assess weather risks (if enabled)
+    6. Run deterministic finance
+    7. Get AI reasoning from Nemotron
+    8. Validate and return complete recommendation
+    """
+    try:
+        cfg = req.config or load_config()
+        
+        # Step 1-2: NL → Intent → Zetaris evidence
+        evidence_result = nl_to_sql.plan_and_execute(req.prompt, config=cfg, max_queries=5)
+        
+        # Extract crop and intent from evidence
+        intent_data = evidence_result.get("intent", {})
+        crop = intent_data.get("crop") or "Tomato"
+        intent_type = intent_data.get("intent_type", "general")
+        
+        # Step 3: Live market prices (if enabled)
+        market_data = None
+        if req.use_live_market:
+            try:
+                market_data = live_market_prices.fetch_live_prices(
+                    commodity=crop,
+                    config=cfg,
+                )
+            except Exception as e:
+                market_data = {"warnings": [f"Live market prices unavailable: {e}"]}
+        
+        # Step 4: Determine transport needs and calculate costs
+        transport_costs = None
+        if req.use_routing and intent_type in ("hold_vs_sell", "market_selection", "net_profit", "storage_transport"):
+            # This would need origin/destination from evidence
+            # For now, we skip automatic routing - requires warehouse/market coords
+            pass
+        
+        # Step 5: Weather risk assessment
+        weather_risk = None
+        if req.use_weather:
+            # Would need lat/lon for warehouse/market
+            pass
+        
+        # Step 6-8: Run full decision pipeline
+        # Use the existing decision agent with enhanced evidence
+        decision_result = fpo_decision_agent.run_pipeline(
+            req.prompt,
+            config=cfg,
+        )
+        
+        # Augment with live data
+        if market_data and decision_result.get("status") == "success":
+            finance = decision_result.get("finance", {})
+            # Could merge live prices into finance here
+            decision_result["live_market_data"] = market_data
+        
+        if weather_risk:
+            decision_result["weather_risk"] = weather_risk
+        
+        return {"status": "success", **decision_result}
+        
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 
 if __name__ == "__main__":

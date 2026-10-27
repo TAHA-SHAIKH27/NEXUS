@@ -12,13 +12,24 @@
     "electron": "electron ."
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.5",
+    "autoprefixer": "^10.6.1",
+    "date-fns": "^4.4.0",
+    "framer-motion": "^14.6.0",
     "lucide-react": "^0.395.0",
+    "postcss": "^8.5.31",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "recharts": "^3.10.1",
+    "socket.io-client": "^4.8.4",
+    "sonner": "^2.0.8",
     "swiper": "^14.0.7",
-    "three": "^0.186.1"
+    "tailwindcss": "^4.3.3",
+    "three": "^0.186.1",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.0",

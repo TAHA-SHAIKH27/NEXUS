@@ -21,6 +21,7 @@ from backend.tools.zetaris import (
     ZetarisConfig,
     validate_select_only,
     handle_zetaris_command,
+    format_zetaris_query_reply,
     get_zetaris_client,
     ZetarisAuthError,
     ZetarisTimeoutError,
@@ -143,6 +144,21 @@ class TestZetarisConfig:
         ok, err = zconfig.is_configured()
         assert ok
         assert not err
+
+    def test_legacy_rest_url_8888_maps_to_ui_proxy_3000(self):
+        from backend.tools.zetaris import resolve_zetaris_base_url
+        url = resolve_zetaris_base_url({
+            "zetaris_rest_url": "http://localhost:8888/api/v1.0",
+        })
+        assert url == "http://localhost:3000"
+
+    def test_explicit_base_url_wins_over_legacy_rest_url(self):
+        from backend.tools.zetaris import resolve_zetaris_base_url
+        url = resolve_zetaris_base_url({
+            "zetaris_base_url": "http://localhost:3000",
+            "zetaris_rest_url": "http://localhost:8888/api/v1.0",
+        })
+        assert url == "http://localhost:3000"
 
 
 # --- ZetarisClient Tests (Mocked) ---
@@ -442,6 +458,59 @@ class TestHandleZetarisCommand:
             assert result is not None
             assert "Query failed" in result["speak"]
             assert "Write/DDL operations are not permitted" in result["speak"]
+
+    def test_query_count_total_batches(self):
+        with patch("backend.tools.zetaris.ZetarisClient") as mock_client_class:
+            mock_client = MagicMock()
+            mock_client.execute_query.return_value = MagicMock(
+                status="success",
+                message="Query returned 1 row(s)",
+                data={"rows": [[15]], "row_count": 1, "columns": ["total_batches"]},
+            )
+            mock_client_class.return_value = mock_client
+
+            prompt = "zetaris: query SELECT COUNT(*) AS total_batches FROM NEXUS_FPO.harvest_batches"
+            result = handle_zetaris_command(prompt, MINIMAL_CONFIG)
+            assert result is not None
+            # Asserts that the reply is informative and contains both count and row count
+            assert "Total Batches: 15" in result["speak"]
+            assert "1 row(s)" in result["speak"]
+            assert "total_batches = 15" in result["logs"][2]
+            assert result["file_data"]["rows"] == [[15]]
+
+
+# --- format_zetaris_query_reply Tests ---
+
+class TestFormatZetarisQueryReply:
+    """Test response formatting for query results."""
+
+    def test_single_row_single_column_aggregate(self):
+        speak, log_res = format_zetaris_query_reply(["total_batches"], [[42]])
+        assert "Total Batches: 42" in speak
+        assert "1 row(s)" in speak
+        assert "total_batches = 42" in log_res
+
+    def test_single_row_multiple_columns(self):
+        speak, log_res = format_zetaris_query_reply(["batch_id", "crop"], [["B101", "Wheat"]])
+        assert "1 row(s)" in speak
+        assert "• batch_id: B101" in speak
+        assert "• crop: Wheat" in speak
+        assert "batch_id=B101" in log_res
+
+    def test_multiple_rows(self):
+        speak, log_res = format_zetaris_query_reply(
+            ["id", "name"],
+            [[1, "Batch A"], [2, "Batch B"], [3, "Batch C"]]
+        )
+        assert "3 row(s)" in speak
+        assert "1. id: 1, name: Batch A" in speak
+        assert "2. id: 2, name: Batch B" in speak
+        assert "Query returned 3 row(s)" in log_res
+
+    def test_zero_rows(self):
+        speak, log_res = format_zetaris_query_reply(["total_batches"], [])
+        assert "0 row(s)" in speak
+        assert "Query returned 0 row(s)" in log_res
 
 
 # --- get_zetaris_client Tests ---
