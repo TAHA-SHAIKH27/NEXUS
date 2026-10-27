@@ -31,6 +31,30 @@ import { detectLang, pickBrowserVoice } from './langDetect';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview');
+
+  // Debug: track activeTab changes to catch unexpected redirects
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    if (activeTabRef.current !== activeTab) {
+      console.log('[NAV] activeTab changed:', activeTabRef.current, '->', activeTab, new Error().stack);
+      activeTabRef.current = activeTab;
+    }
+  }, [activeTab]);
+
+  // Guard: prevent programmatic navigation to 'overview' unless from user click
+  const safeSetActiveTab = useCallback((tab) => {
+    if (tab === 'overview' && activeTab !== 'overview') {
+      // Allow if called from sidebar click (user action) or secondary tool close
+      // Block if called from elsewhere (race condition, effect, etc.)
+      const stack = new Error().stack || '';
+      const isUserAction = stack.includes('AppSidebar') || stack.includes('onClose') || stack.includes('onClick');
+      if (!isUserAction) {
+        console.warn('[NAV] Blocked unexpected navigation to overview:', stack);
+        return;
+      }
+    }
+    setActiveTab(tab);
+  }, [activeTab]);
   const [busy, setBusy] = useState(false);
   const [messages, setMessages] = useState([
     {
@@ -181,7 +205,7 @@ export default function App() {
       {/* Sidebar Navigation */}
       <AppSidebar
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={safeSetActiveTab}
         unreadCount={unreadCount}
         riskCount={88}
       />
@@ -203,7 +227,7 @@ export default function App() {
         {/* Dynamic Page Router */}
         <main className="nexus-page-content" key={refreshKey}>
           {activeTab === 'overview' && (
-            <OverviewDashboard onNavigate={setActiveTab} />
+            <OverviewDashboard onNavigate={safeSetActiveTab} />
           )}
 
           {activeTab === 'ai-workspace' && (
@@ -230,11 +254,11 @@ export default function App() {
           )}
 
           {activeTab === 'risk-centre' && (
-            <RiskCentre onNavigate={setActiveTab} />
+            <RiskCentre onNavigate={safeSetActiveTab} />
           )}
 
           {activeTab === 'decisions' && (
-            <DecisionsReports onNavigate={setActiveTab} />
+            <DecisionsReports onNavigate={safeSetActiveTab} />
           )}
 
           {activeTab === 'datasources' && (
@@ -247,15 +271,15 @@ export default function App() {
 
           {/* Preserved Secondary Tools */}
           {activeTab === 'code' && (
-            <CodeCorePage onClose={() => setActiveTab('overview')} />
+            <CodeCorePage onClose={() => safeSetActiveTab('overview')} />
           )}
 
           {activeTab === 'phone' && (
-            <PhoneMirrorPage onClose={() => setActiveTab('overview')} />
+            <PhoneMirrorPage onClose={() => safeSetActiveTab('overview')} />
           )}
 
           {activeTab === 'files' && (
-            <GalleryPage onClose={() => setActiveTab('overview')} />
+            <GalleryPage onClose={() => safeSetActiveTab('overview')} />
           )}
         </main>
       </div>
