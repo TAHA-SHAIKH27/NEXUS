@@ -34,6 +34,20 @@ A warehouse might hold several tonnes of tomatoes that have only a short quality
 
 ---
 
+## Hackathon tracks — one platform combining all three
+
+**NEXUS combines the core ideas of all three Open Agent Hackathon 2026 tracks.** Its **primary submission track is Track 2 — The Agent That Can Explain Why**, with substantial capabilities aligned with Tracks 1 and 3.
+
+- **Track 1 — Solving Fragmented Intelligence:** NEXUS brings together FPO inventory from PostgreSQL through Zetaris, government mandi-price sources, weather forecasts and road-routing data to support decisions across fragmented sources.
+- **Track 2 — The Agent That Can Explain Why (primary):** It compares spoilage urgency, sale destinations, storage and transport expenses, and recoverable financial outcomes, then explains *why* one feasible course of action is better supported by the evidence.
+- **Track 3 — Reasoning Architecture:** It combines agricultural intent recognition, schema-aware tool calls, evidence validation, deterministic finance, Meterless/Nightshift orchestration and NVIDIA Nemotron reasoning.
+
+NEXUS is **not just a chatbot, database dashboard or price predictor**. Its purpose is to help Farmer Producer Organizations reduce preventable post-harvest losses and improve recoverable returns through traceable, practical decisions. The three tracks describe complementary strengths of the same system, **not a claim of three separate official submissions**.
+
+**One platform. Three tracks. One mission: reduce agricultural waste and recover more value from every harvest.**
+
+---
+
 ## Why this matters
 
 A farmer or FPO operator may have tonnes of tomatoes approaching the end of their saleable window. The nearest mandi is not always the most profitable; the market with the highest quoted price might be too far away, involve costly transport, or expose produce to deterioration. A useful decision must combine **inventory, quality risk, market price, journey time, transport cost, storage cost, and uncertainty** rather than answer with a generic “sell now.”
