@@ -69,19 +69,32 @@ class HttpTransport:
         method: str = "GET",
         headers: Optional[Dict[str, str]] = None,
         body: Optional[bytes] = None,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        timeout: Union[float, Tuple[float, float]] = DEFAULT_TIMEOUT_SECONDS,
     ) -> Tuple[int, Any]:
         req = Request(url, data=body, headers=headers or {}, method=method)
+        # Handle tuple timeout (connect_timeout, read_timeout)
+        if isinstance(timeout, tuple):
+            connect_timeout, read_timeout = timeout
+        else:
+            connect_timeout = read_timeout = timeout
+        
         try:
-            with urlopen(req, timeout=timeout) as resp:
-                raw = resp.read().decode("utf-8")
-                payload: Any = None
-                if raw:
-                    try:
-                        payload = json.loads(raw)
-                    except json.JSONDecodeError:
-                        payload = raw
-                return int(getattr(resp, "status", 200) or 200), payload
+            # Use a socket timeout for connection
+            import socket
+            old_timeout = socket.getdefaulttimeout()
+            socket.setdefaulttimeout(connect_timeout)
+            try:
+                with urlopen(req, timeout=read_timeout) as resp:
+                    raw = resp.read().decode("utf-8")
+                    payload: Any = None
+                    if raw:
+                        try:
+                            payload = json.loads(raw)
+                        except json.JSONDecodeError:
+                            payload = raw
+                        return int(getattr(resp, "status", 200) or 200), payload
+            finally:
+                socket.setdefaulttimeout(old_timeout)
         except HTTPError as exc:
             detail = exc.read(800).decode("utf-8", errors="replace") if exc.fp else ""
             parsed: Any = detail

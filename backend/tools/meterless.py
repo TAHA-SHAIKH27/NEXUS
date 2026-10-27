@@ -101,11 +101,19 @@ class HttpTransport:
         method: str = "GET",
         headers: Optional[Dict[str, str]] = None,
         body: Optional[bytes] = None,
-        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        timeout: Union[float, Tuple[float, float]] = DEFAULT_TIMEOUT_SECONDS,
     ) -> HttpResponse:
         req = Request(url, data=body, headers=headers or {}, method=method)
+        # Handle tuple timeout (connect_timeout, read_timeout)
+        if isinstance(timeout, tuple):
+            connect_timeout, read_timeout = timeout
+        else:
+            connect_timeout = read_timeout = timeout
+
         try:
-            with urlopen(req, timeout=timeout) as resp:
+            # Use tuple timeout for urllib (connect_timeout, read_timeout)
+            # This is supported in Python 3.10+
+            with urlopen(req, timeout=(connect_timeout, read_timeout)) as resp:
                 raw = resp.read().decode("utf-8") if resp.length != 0 else ""
                 payload: Any = None
                 if raw:
