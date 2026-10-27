@@ -449,3 +449,66 @@ The frontend `src/socket.ts` was **never imported anywhere** in the codebase - d
 - ✅ Meterless status: online, live, Nemotron 3 Ultra available
 - ✅ Chat completions work via Meterless → Nemotron 3 Ultra
 - ✅ No Socket.IO 403 errors
+
+---
+
+## ✅ Task 10: Fix PostgreSQL Schema Mismatches & Complete Integration Testing - COMPLETED
+
+### Root Cause
+PostgreSQL analytical views had column name mismatches with the fpo_analytics.py queries:
+1. `v_crop_market_price_trends` - used `min_price_inr_per_quintal`/`max_price_inr_per_quintal` but actual columns are `minimum_price_inr_per_quintal`/`maximum_price_inr_per_quintal`
+2. `v_transport_cost_analysis` - used `destination_buyer`/`transport_cost_per_kg_inr`/`total_cost_inr` but actual columns are `buyer_name`/`cost_per_kg`/`estimated_total_cost_inr`
+3. `demo_scenarios` - used `crop_name`/`risk_category` but actual columns are `scenario_type`
+4. `buyers` - used `market` but actual column is `market_name`
+5. `sales_orders` - used `total_amount_inr`/`unit_price_inr_per_kg` but actual columns are `transaction_value_inr`/`agreed_price_inr_per_quintal`
+6. Weather cache - cached WeatherForecast objects stored hourly as dicts, but cache loading didn't reconstruct WeatherObservation objects
+
+### Files Changed
+- `backend/tools/fpo_analytics.py` - Fixed all SQL column references to match actual schema
+- `backend/tools/weather.py` - Fixed cache loading to reconstruct WeatherObservation objects from cached dicts
+
+### Verification
+- ✅ All 119 backend tests pass (6 skipped)
+- ✅ PostgreSQL fpo_analytics: Risk Centre, Inventory, Market Intelligence, Logistics, Decisions all return success
+- ✅ Weather API returns full 7-day forecast with hourly data for Baramati, Pune, Mumbai, Nashik
+- ✅ OpenRouteService routing works: Baramati→Pune (87km), Baramati→Mumbai (207km), Baramati→Nashik (221km)
+- ✅ Zetaris connection: SELECT 1 succeeds
+- ✅ NVIDIA Nemotron 3 Ultra: direct API calls work
+- ✅ Frontend build: OK (15.33s, 260kB main.js)
+
+### Files Changed Summary (All Tasks)
+
+### New Files
+- `backend/agent/agri_context.py` - Agricultural conversation context store
+
+### Modified Files
+- `main.py` - Session conversation ID tracking, status endpoint fixes, clear on memory reset
+- `backend/tools/fpo_decision_agent.py` - Follow-up intent classification, context integration, extended DECISION_HINTS
+- `backend/tools/nl_to_sql.py` - Follow-up pattern detection, batch code regex fix
+- `backend/tools/meterless.py` - Added masked placeholder rejection
+- `backend/tools/fpo_analytics.py` - Fixed all SQL column references to match actual PostgreSQL schema
+- `backend/tools/weather.py` - Fixed cache loading to reconstruct WeatherObservation objects
+- `src/components/agri/SettingsPage.jsx` - Token field display, Configured badge, clean status check config
+- `src/App.jsx` - Removed unused Socket.IO client, use REST polling for notifications, added navigation guard
+- `src/socket.ts` - **DELETED** (unused dead code)
+- `test_fpo_decision_agent.py` - Added 6 new tests for conversation context functionality
+- `config.json` - **Recovered Nightshift token** (not committed, in .gitignore)
+
+### Final Test Results
+- **Backend Tests: 119 passed, 6 skipped** (all test suites)
+- **Frontend Build: OK** (15.33s, 260kB main.js, 1.26kB index.html)
+- **Integration Status:**
+  - PostgreSQL fpo_analytics: ✅ All 5 endpoints working
+  - Zetaris: ✅ Connected, SELECT 1 succeeds
+  - Meterless/Nightshift: ⚠️ Runtime not running on 8088 (separate install needed)
+  - NVIDIA Nemotron 3 Ultra: ✅ Direct API working
+  - Data.gov.in: ⚠️ HTTP 500 errors (server-side issue)
+  - AGMARKNET: ⚠️ No data returned (parsing/site changes)
+  - OpenRouteService: ✅ Routing working (3 routes tested)
+  - Open-Meteo Weather: ✅ Full 7-day forecasts working
+  - NVIDIA Nemotron 3 Ultra: ✅ Direct chat completion working
+
+### Final Git Status
+- All changes committed to main branch
+- No API keys or secrets committed (config.json in .gitignore)
+- Ready for push to origin/main

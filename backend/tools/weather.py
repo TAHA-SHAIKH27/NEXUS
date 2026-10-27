@@ -297,6 +297,12 @@ class OpenMeteoClient:
         cache_key = _cache_key("forecast", f"{lat:.4f},{lon:.4f}", str(days))
         cached = load_cache(cache_key)
         if cached:
+            # Convert cached hourly dicts back to WeatherObservation objects
+            if "hourly" in cached and isinstance(cached["hourly"], list):
+                cached["hourly"] = [
+                    WeatherObservation(**h) if isinstance(h, dict) else h
+                    for h in cached["hourly"]
+                ]
             return WeatherForecast(**cached)
         
         hourly_vars = hourly_vars or [

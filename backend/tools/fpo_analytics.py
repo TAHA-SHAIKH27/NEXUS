@@ -163,8 +163,8 @@ def get_market_intelligence(crop_name: Optional[str] = None, market_name: Option
                 cur.execute("""
                     SELECT observation_date, market_name, 
                            ROUND(AVG(modal_price_inr_per_quintal)::numeric, 2) as avg_modal_price,
-                           ROUND(MIN(min_price_inr_per_quintal)::numeric, 2) as min_price,
-                           ROUND(MAX(max_price_inr_per_quintal)::numeric, 2) as max_price
+                           ROUND(MIN(minimum_price_inr_per_quintal)::numeric, 2) as min_price,
+                           ROUND(MAX(maximum_price_inr_per_quintal)::numeric, 2) as max_price
                     FROM v_crop_market_price_trends
                     WHERE crop_name = %s
                     GROUP BY observation_date, market_name
@@ -176,8 +176,8 @@ def get_market_intelligence(crop_name: Optional[str] = None, market_name: Option
                 cur.execute("""
                     SELECT market_name, district, state,
                            ROUND(AVG(modal_price_inr_per_quintal)::numeric, 2) as avg_price,
-                           ROUND(MIN(min_price_inr_per_quintal)::numeric, 2) as min_price,
-                           ROUND(MAX(max_price_inr_per_quintal)::numeric, 2) as max_price,
+                           ROUND(MIN(minimum_price_inr_per_quintal)::numeric, 2) as min_price,
+                           ROUND(MAX(maximum_price_inr_per_quintal)::numeric, 2) as max_price,
                            COUNT(*) as observations_count
                     FROM v_crop_market_price_trends
                     WHERE crop_name = %s
@@ -188,16 +188,16 @@ def get_market_intelligence(crop_name: Optional[str] = None, market_name: Option
                 market_comparison = [dict(r) for r in cur.fetchall()]
 
                 cur.execute("""
-                    SELECT b.buyer_name, b.buyer_type, b.market, 
+                    SELECT b.buyer_name, b.buyer_type, b.market_name, 
                            COUNT(so.order_id) as total_orders,
-                           ROUND(SUM(so.total_amount_inr)::numeric, 2) as total_purchase_inr,
-                           ROUND(AVG(so.unit_price_inr_per_kg)::numeric, 2) as avg_unit_price_inr
+                           ROUND(SUM(so.transaction_value_inr)::numeric, 2) as total_purchase_inr,
+                           ROUND(AVG(so.agreed_price_inr_per_quintal / 100.0)::numeric, 2) as avg_unit_price_inr
                     FROM buyers b
                     JOIN sales_orders so ON b.buyer_id = so.buyer_id
                     JOIN harvest_batches hb ON so.batch_id = hb.batch_id
                     JOIN crops c ON hb.crop_id = c.crop_id
                     WHERE c.crop_name = %s
-                    GROUP BY b.buyer_name, b.buyer_type, b.market
+                    GROUP BY b.buyer_name, b.buyer_type, b.market_name
                     ORDER BY total_purchase_inr DESC
                     LIMIT 10
                 """, (target_crop,))
@@ -231,11 +231,11 @@ def get_logistics_intelligence() -> Dict[str, Any]:
 
                 cur.execute("""
                     SELECT route_id, origin_warehouse, origin_district,
-                           destination_buyer, destination_market,
+                           buyer_name, destination_market,
                            distance_km, vehicle_type,
-                           transport_cost_per_kg_inr, total_cost_inr
+                           cost_per_kg as transport_cost_per_kg_inr, estimated_total_cost_inr as total_cost_inr
                     FROM v_transport_cost_analysis
-                    ORDER BY transport_cost_per_kg_inr ASC
+                    ORDER BY cost_per_kg ASC
                     LIMIT 25
                 """)
                 routes = [dict(r) for r in cur.fetchall()]
@@ -304,8 +304,8 @@ def get_decisions_scenarios() -> Dict[str, Any]:
         with get_connection() as conn:
             with conn.cursor(cursor_factory=RealDictCursor) as cur:
                 cur.execute("""
-                    SELECT s.scenario_id, s.scenario_code, s.scenario_name, s.crop_name,
-                           s.risk_category, s.description, s.created_at
+                    SELECT s.scenario_id, s.scenario_code, s.scenario_name,
+                           s.scenario_type, s.description, s.created_at
                     FROM demo_scenarios s
                     ORDER BY s.scenario_code
                 """)
